@@ -7,7 +7,7 @@ const {
   unauthorizedResponse,
   forbiddenResponse,
 } = require("../utils/responseHelper");
-const { sendWelcomeEmail } = require("../services/sesEmailService");
+const { sendWelcomeEmail, sendPasswordResetEmail } = require("../services/emailService");
 
 // JWT Secrets (from environment variables)
 const JWT_ACCESS_SECRET =
@@ -177,8 +177,8 @@ class AuthController {
         );
       }
 
-      // Send welcome email via Amazon SES (non-blocking - don't fail registration if email fails)
-      console.log("🔵 [REGISTER] Sending welcome email via Amazon SES...");
+      // Send welcome email via SMTP (non-blocking - don't fail registration if email fails)
+      console.log("🔵 [REGISTER] Sending welcome email via SMTP...");
       try {
         const emailResult = await sendWelcomeEmail(
           user.email,
@@ -186,7 +186,7 @@ class AuthController {
         );
         if (emailResult.success) {
           console.log(
-            "✅ [REGISTER] Welcome email sent successfully via Amazon SES"
+            "✅ [REGISTER] Welcome email sent successfully via SMTP"
           );
         } else {
           console.warn(

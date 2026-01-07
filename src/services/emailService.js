@@ -1,68 +1,73 @@
 // Email Service for Sending PDF Reports
-const nodemailer = require('nodemailer');
-const path = require('path');
-const fs = require('fs');
-const { generateWelcomeGuidePDF } = require('./pdfGenerator');
+const nodemailer = require("nodemailer");
+const path = require("path");
+const fs = require("fs");
+const { generateWelcomeGuidePDF } = require("./pdfGenerator");
 
 // Load email configuration from environment or config file
 function getEmailConfig() {
   // Try to get from environment variables first
   // Support both SMTP_PASS and SMTP_PASSWORD for backward compatibility
   const emailConfig = {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_SECURE === "true", // true for 465, false for other ports
     auth: {
-      user: process.env.SMTP_USER || '',
-      pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || ''
-    }
+      user: process.env.SMTP_USER || "",
+      pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "",
+    },
   };
-  
+
   return emailConfig;
 }
 
 // Get email sender information
 function getEmailFrom() {
-  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'noreply@kinderbridge.com';
-  const fromName = process.env.SMTP_FROM_NAME || 'KinderBridge';
+  const fromEmail =
+    process.env.SMTP_FROM_EMAIL ||
+    process.env.SMTP_USER ||
+    "noreply@kinderbridge.com";
+  const fromName = process.env.SMTP_FROM_NAME || "KinderBridge";
   return `"${fromName}" <${fromEmail}>`;
 }
 
 // Create email transporter
 function createTransporter() {
   const config = getEmailConfig();
-  
+
   // If no email config, return null (email sending will be skipped)
   if (!config.auth.user || !config.auth.pass) {
-    console.log('⚠️ Email configuration not found. Email sending will be skipped.');
+    console.log(
+      "⚠️ Email configuration not found. Email sending will be skipped."
+    );
     return null;
   }
-  
+
   return nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
-    auth: config.auth
+    auth: config.auth,
   });
 }
 
 // Send PDF report via email
-async function sendPDFReport(email, pdfBuffer, userName = 'User') {
+async function sendPDFReport(email, pdfBuffer, userName = "User") {
   try {
     const transporter = createTransporter();
-    
+
     if (!transporter) {
-      console.log('⚠️ Email transporter not available. Skipping email send.');
+      console.log("⚠️ Email transporter not available. Skipping email send.");
       return {
         success: false,
-        message: 'Email service not configured'
+        message: "Email service not configured",
       };
     }
-    
+
     const mailOptions = {
       from: getEmailFrom(),
       to: email,
-      subject: 'Your Daycare Full Report - Daycare Concierge',
+      subject: "Your Daycare Full Report - Daycare Concierge",
       html: `
         <!DOCTYPE html>
         <html>
@@ -112,72 +117,83 @@ async function sendPDFReport(email, pdfBuffer, userName = 'User') {
       `,
       attachments: [
         {
-          filename: `daycare-full-report-${new Date().toISOString().split('T')[0]}.pdf`,
+          filename: `daycare-full-report-${
+            new Date().toISOString().split("T")[0]
+          }.pdf`,
           content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
-      ]
+          contentType: "application/pdf",
+        },
+      ],
     };
-    
+
     const info = await transporter.sendMail(mailOptions);
-    
-    console.log('✅ Email sent successfully:', info.messageId);
-    
+
+    console.log("✅ Email sent successfully:", info.messageId);
+
     return {
       success: true,
       messageId: info.messageId,
-      message: 'Email sent successfully'
+      message: "Email sent successfully",
     };
-    
   } catch (error) {
-    console.error('❌ Error sending email:', error);
+    console.error("❌ Error sending email:", error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
 
 // Send registration welcome email
-async function sendRegistrationEmail(userEmail, firstName = 'User') {
+async function sendRegistrationEmail(userEmail, firstName = "User") {
   try {
     const transporter = createTransporter();
-    
+
     if (!transporter) {
-      console.log('⚠️ Email transporter not available. Skipping registration email.');
+      console.log(
+        "⚠️ Email transporter not available. Skipping registration email."
+      );
       return {
         success: false,
-        message: 'Email service not configured'
+        message: "Email service not configured",
       };
     }
-    
+
     // Generate welcome guide PDF
-    console.log('🔵 [EMAIL] Generating welcome guide PDF...');
+    console.log("🔵 [EMAIL] Generating welcome guide PDF...");
     let pdfBuffer = null;
     try {
       pdfBuffer = await generateWelcomeGuidePDF(firstName, userEmail);
-      console.log('✅ [EMAIL] Welcome guide PDF generated successfully');
+      console.log("✅ [EMAIL] Welcome guide PDF generated successfully");
     } catch (pdfError) {
-      console.warn('⚠️ [EMAIL] Failed to generate welcome guide PDF:', pdfError);
+      console.warn(
+        "⚠️ [EMAIL] Failed to generate welcome guide PDF:",
+        pdfError
+      );
       // Continue without PDF if generation fails
     }
-    
-    const frontendUrl = process.env.FRONTEND_URL || process.env.FRONTEND_DEV_URL || 'http://localhost:3000';
-    
+
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_DEV_URL ||
+      "http://localhost:3000";
+
     // Build attachments array
     const attachments = [];
     if (pdfBuffer) {
       attachments.push({
-        filename: `welcome-guide-${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: `welcome-guide-${new Date().toISOString().split("T")[0]}.pdf`,
         content: pdfBuffer,
-        contentType: 'application/pdf'
+        contentType: "application/pdf",
       });
     }
-    
+
     const mailOptions = {
       from: getEmailFrom(),
       to: userEmail,
-      subject: `Welcome to ${process.env.SMTP_FROM_NAME || 'KinderBridge'}, ${firstName}!`,
+      subject: `Welcome to ${
+        process.env.SMTP_FROM_NAME || "KinderBridge"
+      }, ${firstName}!`,
       html: `
         <!DOCTYPE html>
         <html>
@@ -383,7 +399,9 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
           <div class="email-container">
             <!-- Logo Section -->
             <div class="logo-section">
-              <div class="logo">${process.env.SMTP_FROM_NAME || 'KinderBridge'}</div>
+              <div class="logo">${
+                process.env.SMTP_FROM_NAME || "KinderBridge"
+              }</div>
               <div class="tagline">Finding daycare with actual availability</div>
             </div>
 
@@ -392,13 +410,17 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
               <div class="greeting">Hi ${firstName},</div>
               
               <div class="welcome-text">
-                Welcome to ${process.env.SMTP_FROM_NAME || 'KinderBridge'}! I'm so glad you joined us.
+                Welcome to ${
+                  process.env.SMTP_FROM_NAME || "KinderBridge"
+                }! I'm so glad you joined us.
               </div>
 
               <!-- Origin Story Section -->
               <div class="story-section">
                 <div class="story-text">
-                  We started this platform after experiencing the challenge of finding quality daycare with real availability. If you've ever felt that same frustration, you know how stressful it can be. Our hope is that ${process.env.SMTP_FROM_NAME || 'KinderBridge'} makes this process a whole lot easier for you.
+                  We started this platform after experiencing the challenge of finding quality daycare with real availability. If you've ever felt that same frustration, you know how stressful it can be. Our hope is that ${
+                    process.env.SMTP_FROM_NAME || "KinderBridge"
+                  } makes this process a whole lot easier for you.
                 </div>
               </div>
 
@@ -416,7 +438,9 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
                 <div class="feedback-option">
                   <div class="feedback-label">✉️ Send feedback</div>
                   <div class="feedback-description">
-                    Have thoughts, suggestions, or questions? Just reply to this email—I read every message personally. Your feedback would mean a lot—it'll help shape the future of ${process.env.SMTP_FROM_NAME || 'KinderBridge'}.
+                    Have thoughts, suggestions, or questions? Just reply to this email—I read every message personally. Your feedback would mean a lot—it'll help shape the future of ${
+                      process.env.SMTP_FROM_NAME || "KinderBridge"
+                    }.
                   </div>
                 </div>
               </div>
@@ -427,9 +451,17 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
 
               <!-- Signature -->
               <div class="signature">
-                <div class="signature-name">The ${process.env.SMTP_FROM_NAME || 'KinderBridge'} Team</div>
-                <div class="signature-title">Founder, ${process.env.SMTP_FROM_NAME || 'KinderBridge'}</div>
-                <a href="mailto:${process.env.SMTP_FROM_EMAIL || 'noreply@kinderbridge.com'}" class="signature-email">${process.env.SMTP_FROM_EMAIL || 'noreply@kinderbridge.com'}</a>
+                <div class="signature-name">The ${
+                  process.env.SMTP_FROM_NAME || "KinderBridge"
+                } Team</div>
+                <div class="signature-title">Founder, ${
+                  process.env.SMTP_FROM_NAME || "KinderBridge"
+                }</div>
+                <a href="mailto:${
+                  process.env.SMTP_FROM_EMAIL || "noreply@kinderbridge.com"
+                }" class="signature-email">${
+        process.env.SMTP_FROM_EMAIL || "noreply@kinderbridge.com"
+      }</a>
               </div>
 
               <!-- Explore Platform Section -->
@@ -448,41 +480,46 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
 
             <!-- Footer -->
             <div class="footer">
-              <div class="footer-logo">${process.env.SMTP_FROM_NAME || 'KinderBridge'}</div>
+              <div class="footer-logo">${
+                process.env.SMTP_FROM_NAME || "KinderBridge"
+              }</div>
               <div class="footer-tagline">Built by parents, for parents</div>
               <div class="footer-contact">
-                ${process.env.SMTP_FROM_EMAIL || 'noreply@kinderbridge.com'} | Toronto, ON, Canada
+                ${
+                  process.env.SMTP_FROM_EMAIL || "noreply@kinderbridge.com"
+                } | Toronto, ON, Canada
               </div>
               <div class="footer-links">
                 <a href="${frontendUrl}/unsubscribe" class="footer-link">Unsubscribe</a>
                 <a href="${frontendUrl}/privacy" class="footer-link">Privacy Policy</a>
               </div>
               <div class="compliance">
-                This welcome message complies with Canada's Anti-Spam Legislation (CASL). You received this because you confirmed your email address for a ${process.env.SMTP_FROM_NAME || 'KinderBridge'} account.
+                This welcome message complies with Canada's Anti-Spam Legislation (CASL). You received this because you confirmed your email address for a ${
+                  process.env.SMTP_FROM_NAME || "KinderBridge"
+                } account.
               </div>
             </div>
           </div>
         </body>
         </html>
       `,
-      attachments: attachments.length > 0 ? attachments : undefined
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
-    
+
     const info = await transporter.sendMail(mailOptions);
-    
-    console.log('✅ Registration email sent successfully:', info.messageId);
-    
+
+    console.log("✅ Registration email sent successfully:", info.messageId);
+
     return {
       success: true,
       messageId: info.messageId,
-      message: 'Registration email sent successfully'
+      message: "Registration email sent successfully",
     };
-    
   } catch (error) {
-    console.error('❌ Error sending registration email:', error);
+    console.error("❌ Error sending registration email:", error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
@@ -496,16 +533,16 @@ async function sendRegistrationEmail(userEmail, firstName = 'User') {
 async function sendOTPEmail(email, otp) {
   try {
     const transporter = createTransporter();
-    
+
     if (!transporter) {
-      console.log('⚠️ Email transporter not available. Cannot send OTP email.');
+      console.log("⚠️ Email transporter not available. Cannot send OTP email.");
       return {
         success: false,
-        message: 'Email service not configured'
+        message: "Email service not configured",
       };
     }
 
-    const brandName = process.env.SMTP_FROM_NAME || 'KinderBridge';
+    const brandName = process.env.SMTP_FROM_NAME || "KinderBridge";
     const fromEmail = getEmailFrom();
 
     const mailOptions = {
@@ -598,22 +635,319 @@ async function sendOTPEmail(email, otp) {
           </div>
         </body>
         </html>
-      `
+      `,
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ OTP email sent successfully:', info.messageId);
+    console.log("✅ OTP email sent successfully:", info.messageId);
 
     return {
       success: true,
       messageId: info.messageId,
-      message: 'OTP email sent successfully'
+      message: "OTP email sent successfully",
     };
   } catch (error) {
-    console.error('❌ Error sending OTP email:', error);
+    console.error("❌ Error sending OTP email:", error);
     return {
       success: false,
-      error: error.message || 'Failed to send OTP email'
+      error: error.message || "Failed to send OTP email",
+    };
+  }
+}
+
+/**
+ * Send password reset email (using SMTP)
+ * @param {string} email - User email address
+ * @param {string} firstName - User's first name
+ * @param {string} resetToken - Password reset token
+ * @returns {Promise<Object>} Result object with success status
+ */
+async function sendPasswordResetEmail(email, firstName = "User", resetToken) {
+  try {
+    console.log("🔵 [EMAIL] sendPasswordResetEmail called");
+    console.log(`🔵 [EMAIL] Email: ${email}`);
+    console.log(`🔵 [EMAIL] First Name: ${firstName}`);
+    console.log(
+      `🔵 [EMAIL] Reset Token: ${resetToken ? "Present" : "Missing"}`
+    );
+
+    // Validate email
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      console.error("❌ [EMAIL] Invalid email address provided:", email);
+      return {
+        success: false,
+        message: "Invalid email address",
+      };
+    }
+
+    // Validate reset token
+    if (!resetToken || typeof resetToken !== "string") {
+      console.error("❌ [EMAIL] Invalid reset token provided");
+      return {
+        success: false,
+        message: "Reset token is required",
+      };
+    }
+
+    const transporter = createTransporter();
+
+    if (!transporter) {
+      console.log(
+        "⚠️ [EMAIL] Email transporter not available. Skipping password reset email."
+      );
+      return {
+        success: false,
+        message: "Email service not configured",
+      };
+    }
+
+    const firstNameValue = firstName || "User";
+    const brandName = process.env.SMTP_FROM_NAME || "KinderBridge";
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_DEV_URL ||
+      "https://kinderbridge.ca";
+    const subject = `Reset Your Password - ${brandName}`;
+    const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(
+      resetToken
+    )}`;
+
+    // HTML password reset email template
+    const htmlTemplate = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f4f4f4;">
+    <tr>
+      <td style="padding: 20px 0;">
+        <table role="presentation" style="width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">Reset Your Password</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <h2 style="margin: 0 0 20px 0; color: #333333; font-size: 24px;">Hello, ${firstNameValue}!</h2>
+              <p style="margin: 0 0 20px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                We received a request to reset your password for your ${brandName} account.
+              </p>
+              <p style="margin: 0 0 20px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                Click the button below to reset your password. This link will expire in 1 hour for security reasons.
+              </p>
+              
+              <!-- CTA Button -->
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td style="text-align: center;">
+                    <a href="${resetUrl}" style="display: inline-block; padding: 14px 30px; background-color: #667eea; color: #ffffff; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">Reset Password</a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 20px 0 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
+                If the button doesn't work, copy and paste this link into your browser:
+              </p>
+              <p style="margin: 10px 0 0 0; color: #667eea; font-size: 12px; line-height: 1.6; word-break: break-all;">
+                ${resetUrl}
+              </p>
+              
+              <p style="margin: 30px 0 0 0; color: #999999; font-size: 14px; line-height: 1.6;">
+                If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+              <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">
+                Best regards,<br>
+                <strong style="color: #333333;">The ${brandName} Team</strong>
+              </p>
+              <p style="margin: 10px 0 0 0; color: #999999; font-size: 12px;">
+                © ${new Date().getFullYear()} ${brandName}. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const mailOptions = {
+      from: getEmailFrom(),
+      to: email.trim(),
+      subject: subject,
+      html: htmlTemplate,
+    };
+
+    console.log("🔵 [EMAIL] Sending password reset email...");
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log("✅ [EMAIL] Password reset email sent successfully");
+    console.log(`✅ [EMAIL] Message ID: ${info.messageId}`);
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      message: "Password reset email sent successfully",
+    };
+  } catch (error) {
+    console.error("❌ [EMAIL] Exception in sendPasswordResetEmail:");
+    console.error(`❌ [EMAIL] Error: ${error.message || "Unknown error"}`);
+    console.error(`❌ [EMAIL] Stack:`, error.stack);
+    return {
+      success: false,
+      error: error.message || "Failed to send password reset email",
+    };
+  }
+}
+
+/**
+ * Send welcome email after registration (using SMTP)
+ * @param {string} email - User email address
+ * @param {string} firstName - User's first name
+ * @returns {Promise<Object>} Result object with success status
+ */
+async function sendWelcomeEmail(email, firstName = "User") {
+  try {
+    console.log("🔵 [EMAIL] sendWelcomeEmail called");
+    console.log(`🔵 [EMAIL] Email: ${email}`);
+    console.log(`🔵 [EMAIL] First Name: ${firstName}`);
+
+    // Validate email
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      console.error("❌ [EMAIL] Invalid email address provided:", email);
+      return {
+        success: false,
+        message: "Invalid email address",
+      };
+    }
+
+    const transporter = createTransporter();
+
+    if (!transporter) {
+      console.log(
+        "⚠️ [EMAIL] Email transporter not available. Skipping welcome email."
+      );
+      return {
+        success: false,
+        message: "Email service not configured",
+      };
+    }
+
+    const firstNameValue = firstName || "User";
+    const brandName = process.env.SMTP_FROM_NAME || "KinderBridge";
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_DEV_URL ||
+      "https://kinderbridge.ca";
+    const subject = `Welcome to ${brandName}, ${firstNameValue}! 🎉`;
+
+    // HTML welcome email template
+    const htmlTemplate = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ${brandName}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f4f4f4;">
+    <tr>
+      <td style="padding: 20px 0;">
+        <table role="presentation" style="width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">Welcome to ${brandName}! 🎉</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <h2 style="margin: 0 0 20px 0; color: #333333; font-size: 24px;">Hello, ${firstNameValue}!</h2>
+              <p style="margin: 0 0 20px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                Thank you for joining our ${brandName} community! We're thrilled to have you on board.
+              </p>
+              <p style="margin: 0 0 20px 0; color: #666666; font-size: 16px; line-height: 1.6;">
+                Your account has been successfully created. You can now start exploring our platform and find the perfect daycare for your needs.
+              </p>
+              
+              <!-- CTA Button -->
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td style="text-align: center;">
+                    <a href="${frontendUrl}/search" style="display: inline-block; padding: 14px 30px; background-color: #667eea; color: #ffffff; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">Get Started</a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 20px 0 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
+                If you have any questions, feel free to reach out to our support team. We're here to help!
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+              <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">
+                Best regards,<br>
+                <strong style="color: #333333;">The ${brandName} Team</strong>
+              </p>
+              <p style="margin: 10px 0 0 0; color: #999999; font-size: 12px;">
+                © ${new Date().getFullYear()} ${brandName}. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const mailOptions = {
+      from: getEmailFrom(),
+      to: email.trim(),
+      subject: subject,
+      html: htmlTemplate,
+    };
+
+    console.log("🔵 [EMAIL] Sending welcome email...");
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log("✅ [EMAIL] Welcome email sent successfully");
+    console.log(`✅ [EMAIL] Message ID: ${info.messageId}`);
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      message: "Welcome email sent successfully",
+    };
+  } catch (error) {
+    console.error("❌ [EMAIL] Exception in sendWelcomeEmail:");
+    console.error(`❌ [EMAIL] Error: ${error.message || "Unknown error"}`);
+    console.error(`❌ [EMAIL] Stack:`, error.stack);
+    return {
+      success: false,
+      error: error.message || "Failed to send welcome email",
     };
   }
 }
@@ -622,6 +956,7 @@ module.exports = {
   sendPDFReport,
   sendRegistrationEmail,
   sendOTPEmail,
-  createTransporter
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  createTransporter,
 };
-
