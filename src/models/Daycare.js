@@ -52,27 +52,31 @@ class DaycareModel {
   }
 
   /**
-   * Get daycare by ID
-   * @param {string} id - Daycare ID
+   * Get daycare by ID or slug (v15.0.0 - slug support)
+   * @param {string} idOrSlug - Daycare ID or slug
    * @returns {Object} Daycare object
    */
-  async getDaycareById(id) {
+  async getDaycareById(idOrSlug) {
     try {
       await this.ensureConnection();
 
-      // Try ObjectId first, then string search
       let daycare;
 
-      // Check if it's a valid ObjectId
-      const mongoose = require("mongoose");
-      if (mongoose.Types.ObjectId.isValid(id)) {
-        daycare = await Daycare.findById(id);
+      // v15.0.0: Try slug first (better SEO, more readable URLs)
+      daycare = await Daycare.findOne({ slug: idOrSlug });
+
+      // If not found by slug, try ObjectId
+      if (!daycare) {
+        const mongoose = require("mongoose");
+        if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+          daycare = await Daycare.findById(idOrSlug);
+        }
       }
 
-      // If not found, try string search
+      // If still not found, try string search (backward compatibility)
       if (!daycare) {
         daycare = await Daycare.findOne({
-          $or: [{ id: id }, { name: { $regex: id, $options: "i" } }],
+          $or: [{ id: idOrSlug }, { name: { $regex: idOrSlug, $options: "i" } }],
         });
       }
 
@@ -168,7 +172,7 @@ class DaycareModel {
    */
   async getTypesByRegionAndCity(region, city) {
     await this.ensureConnection();
-    
+
     const matchStage = {
       daycareType: { $exists: true, $nin: ["", "NO"] },
     };
@@ -187,7 +191,7 @@ class DaycareModel {
       { $project: { _id: 0, value: "$_id" } },
       { $sort: { value: 1 } },
     ]);
-    
+
     return rows.map((r) => r.value);
   }
 
@@ -207,7 +211,6 @@ class DaycareModel {
         priceMax,
         availability,
         ageRange,
-        vacancy,
         programAge,
         features,
         region,
@@ -215,6 +218,7 @@ class DaycareModel {
         daycareType,
         cwelcc,
         subsidy,
+        vacancy,
         page = 1,
         limit = 10,
       } = searchParams;
@@ -257,46 +261,92 @@ class DaycareModel {
         if (priceMax) filter.price.$lte = parseFloat(priceMax);
       }
 
-      // Availability filter (can be array or string)
-      if (availability) {
-        if (Array.isArray(availability) && availability.length > 0) {
-          filter.availability = { $in: availability };
-        } else if (typeof availability === "string") {
-          const availabilityArray = availability
-            .split(",")
-            .map((a) => a.trim());
-          if (availabilityArray.length > 0) {
-            filter.availability = { $in: availabilityArray };
-          }
-        }
-      }
-
-      // Age range filter (can be array or string)
+      // Age range filter - filters by ageGroups existence (shows all daycares that offer that age group)
+      // Frontend sends: "Infants", "Toddlers", "Preschool", "School Age"
+      // Maps to: ageGroups.infant, ageGroups.toddler, ageGroups.preschool, ageGroups.schoolAge
       let ageRangeArray = [];
       if (ageRange) {
-        if (Array.isArray(ageRange) && ageRange.length > 0) {
-          filter.ageRange = { $in: ageRange };
-          ageRangeArray = ageRange;
-        } else if (typeof ageRange === "string") {
-          const parsed = ageRange.split(",").map((a) => a.trim());
-          if (parsed.length > 0) {
-            filter.ageRange = { $in: parsed };
-            ageRangeArray = parsed;
-          }
-        }
-      }
-
-      // Vacancy filter (cascading with ageRange)
-      // Meaning:
-      // - vacancy=yes  -> for selected age group(s), vacancy > 0 (any selected group)
-      // - vacancy=no   -> for selected age group(s), vacancy <= 0 or missing (all selected groups)
-      if (vacancy && Array.isArray(ageRangeArray) && ageRangeArray.length > 0) {
         const normalize = (s) =>
           String(s || "")
             .trim()
             .toLowerCase();
-        const wantYes = ["yes", "true", "1"].includes(normalize(vacancy));
-        const wantNo = ["no", "false", "0"].includes(normalize(vacancy));
+
+        // Map frontend values to database age group keys
+        const ageKeyMap = {
+          infants: "infant",
+          infant: "infant",
+          toddlers: "toddler",
+          toddler: "toddler",
+          preschool: "preschool",
+          kindergarten: "kindergarten",
+          "school age": "schoolAge",
+          schoolage: "schoolAge",
+        };
+
+        // Parse ageRange (can be array or string)
+        if (Array.isArray(ageRange) && ageRange.length > 0) {
+          ageRangeArray = ageRange;
+        } else if (typeof ageRange === "string") {
+          const parsed = ageRange.split(",").map((a) => a.trim());
+          if (parsed.length > 0) {
+            ageRangeArray = parsed;
+          }
+        }
+
+        // Filter by ageGroups with capacity filtering based on availability parameter
+        // availability=yes (default) → capacity > 0 (they accept that age group)
+        // availability=no → capacity = 0 (they do NOT accept that age group)
+        if (ageRangeArray.length > 0) {
+          const groupKeys = ageRangeArray
+            .map((a) => ageKeyMap[normalize(a)])
+            .filter(Boolean);
+
+          if (groupKeys.length > 0) {
+            filter.$and = filter.$and || [];
+
+            // Check availability status (default to "yes" if not provided)
+            const normalizeAvailability = String(availability || "yes")
+              .trim()
+              .toLowerCase();
+
+            if (normalizeAvailability === "no") {
+              // Filter for capacity = 0 OR field doesn't exist (they do NOT accept this age group)
+              filter.$and.push({
+                $or: groupKeys.flatMap((k) => [
+                  { [`ageGroups.${k}.capacity`]: { $eq: 0 } },
+                  { [`ageGroups.${k}.capacity`]: { $exists: false } },
+                  { [`ageGroups.${k}`]: { $exists: false } },
+                ]),
+              });
+              console.log(
+                "🔍 Filtering for capacity = 0 or missing, groupKeys:",
+                groupKeys
+              );
+            } else {
+              // Default: Filter for capacity > 0 (they accept this age group)
+              filter.$and.push({
+                $or: groupKeys.map((k) => ({
+                  [`ageGroups.${k}.capacity`]: { $gt: 0 },
+                })),
+              });
+              console.log(
+                "🔍 Filtering for capacity > 0, groupKeys:",
+                groupKeys,
+                "availability:",
+                availability || "yes (default)"
+              );
+            }
+          }
+        }
+      }
+
+      // Vacancy filter (cascading with ageRange) - v14.0.0
+      // filters by ageGroups.{group}.vacancy
+      if (ageRange && vacancy) {
+        const normalize = (s) =>
+          String(s || "")
+            .trim()
+            .toLowerCase();
 
         const ageKeyMap = {
           infants: "infant",
@@ -309,28 +359,54 @@ class DaycareModel {
           schoolage: "schoolAge",
         };
 
-        const groupKeys = ageRangeArray
-          .map((a) => ageKeyMap[normalize(a)])
-          .filter(Boolean);
+        let ageRangeArray = [];
+        if (Array.isArray(ageRange) && ageRange.length > 0) {
+          ageRangeArray = ageRange;
+        } else if (typeof ageRange === "string") {
+          const parsed = ageRange.split(",").map((a) => a.trim());
+          if (parsed.length > 0) {
+            ageRangeArray = parsed;
+          }
+        }
 
-        if (groupKeys.length > 0) {
-          if (wantYes) {
+        if (ageRangeArray.length > 0) {
+          const groupKeys = ageRangeArray
+            .map((a) => ageKeyMap[normalize(a)])
+            .filter(Boolean);
+
+          if (groupKeys.length > 0) {
             filter.$and = filter.$and || [];
-            filter.$and.push({
-              $or: groupKeys.map((k) => ({
-                [`ageGroups.${k}.vacancy`]: { $gt: 0 },
-              })),
-            });
-          } else if (wantNo) {
-            filter.$and = filter.$and || [];
-            filter.$and.push({
-              $and: groupKeys.map((k) => ({
-                $or: [
-                  { [`ageGroups.${k}.vacancy`]: { $lte: 0 } },
+            const normalizeVacancy = String(vacancy || "")
+              .trim()
+              .toLowerCase();
+
+            if (normalizeVacancy === "no") {
+              // Filter for vacancy = 0 OR field doesn't exist (no vacancy)
+              filter.$and.push({
+                $or: groupKeys.flatMap((k) => [
+                  { [`ageGroups.${k}.vacancy`]: { $eq: 0 } },
                   { [`ageGroups.${k}.vacancy`]: { $exists: false } },
-                ],
-              })),
-            });
+                  { [`ageGroups.${k}`]: { $exists: false } },
+                ]),
+              });
+              console.log(
+                "🔍 Filtering for vacancy = 0 or missing, groupKeys:",
+                groupKeys
+              );
+            } else {
+              // Default: Filter for vacancy > 0 (has vacancy)
+              filter.$and.push({
+                $or: groupKeys.map((k) => ({
+                  [`ageGroups.${k}.vacancy`]: { $gt: 0 },
+                })),
+              });
+              console.log(
+                "🔍 Filtering for vacancy > 0, groupKeys:",
+                groupKeys,
+                "vacancy:",
+                vacancy
+              );
+            }
           }
         }
       }
@@ -390,8 +466,28 @@ class DaycareModel {
       const limitNum = parseInt(limit, 10) || 10;
       const skip = (pageNum - 1) * limitNum;
 
+      // Debug: Log the filter being used
+      console.log(
+        "🔍 Final filter for search:",
+        JSON.stringify(filter, null, 2)
+      );
+
+      // Debug: Count with only region filter (to compare with Excel)
+      if (region) {
+        const regionOnlyFilter = { region: { $regex: region, $options: "i" } };
+        const regionOnlyCount = await Daycare.countDocuments(regionOnlyFilter);
+        console.log(
+          `🔍 Count with ONLY region="${region}" filter (no ageRange):`,
+          regionOnlyCount
+        );
+      }
+
       // Get total count of matching documents
       const totalCount = await Daycare.countDocuments(filter);
+      console.log(
+        `🔍 Total count with ALL filters (region + ageRange + availability):`,
+        totalCount
+      );
 
       // Get paginated results
       const daycares = await Daycare.find(filter)
@@ -410,11 +506,16 @@ class DaycareModel {
           priceStringType: typeof firstDaycare.priceString,
           hasPriceString: !!firstDaycare.priceString,
           priceStringValue: firstDaycare.priceString,
-          allFields: Object.keys(firstDaycare).filter(k => k.includes('price') || k.includes('Price'))
+          allFields: Object.keys(firstDaycare).filter(
+            (k) => k.includes("price") || k.includes("Price")
+          ),
         });
-        
+
         // Log ALL fields to see what's actually in the database
-        console.log("📋 ALL FIELDS in first daycare:", Object.keys(firstDaycare).sort());
+        console.log(
+          "📋 ALL FIELDS in first daycare:",
+          Object.keys(firstDaycare).sort()
+        );
       }
 
       // Calculate pagination metadata
@@ -518,6 +619,82 @@ class DaycareModel {
       await this.ensureConnection();
 
       return await Daycare.getStats();
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Get vacancy statistics by age group for a specific region
+   * Returns total number of available spots (sum of all vacancies)
+   * @param {string} region - Region name (e.g., "Toronto")
+   * @returns {Object} Total spots available by age group
+   */
+  async getVacancyStats(region) {
+    try {
+      await this.ensureConnection();
+
+      // Find all daycares in the specified region
+      const daycares = await Daycare.find({ region: { $regex: region, $options: "i" } }).lean();
+
+      // Initialize counters - sum total spots, not daycares
+      const stats = {
+        infant: 0,
+        toddler: 0,
+        preschool: 0,
+        kindergarten: 0,
+        schoolAge: 0,
+      };
+
+      // Sum up total vacancy spots for each age group
+      daycares.forEach((daycare) => {
+        if (daycare.ageGroups) {
+          // Infant - sum total vacancy spots
+          if (
+            daycare.ageGroups.infant &&
+            daycare.ageGroups.infant.vacancy > 0
+          ) {
+            stats.infant += daycare.ageGroups.infant.vacancy;
+          }
+
+          // Toddler - sum total vacancy spots
+          if (
+            daycare.ageGroups.toddler &&
+            daycare.ageGroups.toddler.vacancy > 0
+          ) {
+            stats.toddler += daycare.ageGroups.toddler.vacancy;
+          }
+
+          // Preschool - sum total vacancy spots
+          if (
+            daycare.ageGroups.preschool &&
+            daycare.ageGroups.preschool.vacancy > 0
+          ) {
+            stats.preschool += daycare.ageGroups.preschool.vacancy;
+          }
+
+          // Kindergarten - sum total vacancy spots
+          if (
+            daycare.ageGroups.kindergarten &&
+            daycare.ageGroups.kindergarten.vacancy > 0
+          ) {
+            stats.kindergarten += daycare.ageGroups.kindergarten.vacancy;
+          }
+
+          // School Age - sum total vacancy spots
+          if (
+            daycare.ageGroups.schoolAge &&
+            daycare.ageGroups.schoolAge.vacancy > 0
+          ) {
+            stats.schoolAge += daycare.ageGroups.schoolAge.vacancy;
+          }
+        }
+      });
+
+      return {
+        region: region,
+        ...stats,
+      };
     } catch (error) {
       throw error;
     }

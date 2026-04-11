@@ -167,4 +167,23 @@ router.get("/stats/overview", async (req, res) => {
   }
 });
 
+// GET /api/daycares/vacancy-stats?region=Toronto - Get vacancy statistics by age group (v14.0.0)
+router.get("/vacancy-stats", async (req, res) => {
+  try {
+    const { region } = req.query;
+    const DaycareController = require("../controllers/daycareController");
+    const daycareController = new DaycareController(req.db);
+
+    const result = await daycareController.getVacancyStats(region);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error fetching vacancy stats:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 module.exports = router;

@@ -266,6 +266,7 @@ const daycareSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    collection: 'daycares_master',
   }
 );
 

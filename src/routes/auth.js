@@ -394,4 +394,150 @@ router.get('/search-users', authenticateToken, async (req, res) => {
   }
 });
 
+// Request password reset (forgot password)
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+    }
+    
+    const AuthController = require('../controllers/authController');
+    const authController = new AuthController(req.db);
+    
+    const result = await authController.requestPasswordReset(email);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Still return success to prevent email enumeration
+    res.status(200).json({
+      success: true,
+      message: 'If an account exists with that email, a password reset link has been sent.'
+    });
+  }
+});
+
+// Verify reset token (check if token is valid before showing reset form)
+router.get('/reset-password/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token is required'
+      });
+    }
+    
+    const AuthController = require('../controllers/authController');
+    const authController = new AuthController(req.db);
+    
+    const result = await authController.verifyResetToken(token);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error('Verify reset token error:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Invalid or expired reset token'
+    });
+  }
+});
+
+// Reset password with token
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token is required'
+      });
+    }
+    
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password is required'
+      });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters long'
+      });
+    }
+    
+    const AuthController = require('../controllers/authController');
+    const authController = new AuthController(req.db);
+    
+    const result = await authController.resetPassword(token, password);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to reset password'
+    });
+  }
+});
+
+// Verify email with token
+router.get('/verify-email/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Verification token is required'
+      });
+    }
+    
+    const AuthController = require('../controllers/authController');
+    const authController = new AuthController(req.db);
+    
+    const result = await authController.verifyEmail(token);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Invalid or expired verification token'
+    });
+  }
+});
+
+// Resend verification email
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+    }
+    
+    const AuthController = require('../controllers/authController');
+    const authController = new AuthController(req.db);
+    
+    const result = await authController.resendVerificationEmail(email);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error('Resend verification email error:', error);
+    // Still return success to prevent email enumeration
+    res.status(200).json({
+      success: true,
+      message: 'If an account exists with that email, a verification email has been sent.'
+    });
+  }
+});
+
 module.exports = router;

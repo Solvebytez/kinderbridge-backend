@@ -176,6 +176,21 @@ class DaycareController {
       return internalErrorResponse(error.message);
     }
   }
+
+  /**
+   * Get vacancy statistics by age group for a region (v14.0.0)
+   * @param {string} region - Region name (e.g., "Toronto")
+   * @returns {Object} Response with vacancy counts by age group
+   */
+  async getVacancyStats(region) {
+    try {
+      const stats = await this.daycareModel.getVacancyStats(region || "Toronto");
+      return successResponse(stats);
+    } catch (error) {
+      console.error("Error fetching vacancy stats:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
 }
 
 module.exports = DaycareController;
