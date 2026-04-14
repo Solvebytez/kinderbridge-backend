@@ -15,7 +15,33 @@ class ApplicationController {
     this.db = db;
     // Ensure Mongoose is connected (models will handle initialization)
     const Application = require("../models/Application");
+    const AutoApplyCredit = require("../models/AutoApplyCredit");
     this.applicationModel = new Application(db);
+    this.creditModel = new AutoApplyCredit(db);
+  }
+
+  parseDateInput(value) {
+    if (!value || typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // Accept yyyy-mm-dd
+    const isoLike = /^(\d{4})-(\d{2})-(\d{2})$/;
+    const ddmmyyyy = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+    let parsedDate = null;
+    if (isoLike.test(trimmed)) {
+      parsedDate = new Date(`${trimmed}T00:00:00.000Z`);
+    } else {
+      const match = trimmed.match(ddmmyyyy);
+      if (match) {
+        const [, dd, mm, yyyy] = match;
+        parsedDate = new Date(`${yyyy}-${mm}-${dd}T00:00:00.000Z`);
+      }
+    }
+
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) return null;
+    return parsedDate;
   }
 
   /**
@@ -191,6 +217,237 @@ class ApplicationController {
       return response;
     } catch (error) {
       console.error("Error deleting application:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
+
+  async getAutoApplyCredits(userId) {
+    try {
+      if (!userId) {
+        return unauthorizedResponse("User ID is required");
+      }
+
+      const wallet = await this.creditModel.collection.findOneAndUpdate(
+        { userId },
+        { $setOnInsert: { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+
+      return successResponse({
+        totalCredits: wallet.totalCredits,
+        usedCredits: wallet.usedCredits,
+        remainingCredits: wallet.remainingCredits,
+      });
+    } catch (error) {
+      console.error("Error getting auto-apply credits:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
+
+  async grantAutoApplyCredits(userId, payload = {}) {
+    try {
+      if (!userId) {
+        return unauthorizedResponse("User ID is required");
+      }
+
+      const credits = Number(payload.credits ?? 30);
+      if (!Number.isInteger(credits) || credits <= 0 || credits > 30) {
+        return errorResponse("credits must be an integer between 1 and 30", 400);
+      }
+
+      const paymentReference =
+        typeof payload.paymentReference === "string"
+          ? payload.paymentReference.trim() || null
+          : null;
+      const note =
+        typeof payload.note === "string" ? payload.note.trim() || null : null;
+
+      const now = new Date();
+      const wallet = await this.creditModel.collection.findOneAndUpdate(
+        { userId },
+        {
+          $setOnInsert: {
+            userId,
+            totalCredits: 0,
+            usedCredits: 0,
+            remainingCredits: 0,
+          },
+          $inc: {
+            totalCredits: credits,
+            remainingCredits: credits,
+          },
+          $set: { lastCreditGrantAt: now },
+          $push: {
+            grants: {
+              credits,
+              paymentReference,
+              note,
+              grantedAt: now,
+            },
+          },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+
+      const response = successResponse(
+        {
+          totalCredits: wallet.totalCredits,
+          usedCredits: wallet.usedCredits,
+          remainingCredits: wallet.remainingCredits,
+          grantedCredits: credits,
+        },
+        "Credits granted successfully"
+      );
+      return response;
+    } catch (error) {
+      console.error("Error granting auto-apply credits:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
+
+  async submitAutoApplyApplications(userId, payload) {
+    try {
+      if (!userId) {
+        return unauthorizedResponse("User ID is required");
+      }
+
+      const daycareIds = Array.isArray(payload?.daycareIds)
+        ? [...new Set(payload.daycareIds.map((id) => String(id).trim()).filter(Boolean))]
+        : [];
+
+      if (daycareIds.length === 0) {
+        return errorResponse("At least one daycare ID is required", 400);
+      }
+
+      const parentName = String(payload?.parentName || "").trim();
+      const parentEmail = String(payload?.parentEmail || "").trim().toLowerCase();
+      const parentPhone = String(payload?.parentPhone || "").trim();
+      const childName = String(payload?.childName || "").trim();
+      const specialNotes = String(payload?.specialNotes || "").trim();
+      const childDob = this.parseDateInput(payload?.childDob);
+      const preferredStartDate = this.parseDateInput(payload?.preferredStartDate);
+
+      if (!parentName || !parentEmail || !parentPhone || !childName) {
+        return errorResponse(
+          "parentName, parentEmail, parentPhone, and childName are required",
+          400
+        );
+      }
+      if (!childDob) {
+        return errorResponse("childDob is required (dd-mm-yyyy or yyyy-mm-dd)", 400);
+      }
+      if (!preferredStartDate) {
+        return errorResponse(
+          "preferredStartDate is required (dd-mm-yyyy or yyyy-mm-dd)",
+          400
+        );
+      }
+
+      const ApplicationCollection = this.applicationModel.collection;
+      const existingApplications = await ApplicationCollection.find({
+        userId,
+        daycareId: { $in: daycareIds },
+        status: { $in: ["pending", "accepted"] },
+      })
+        .select("daycareId")
+        .lean();
+
+      const existingSet = new Set(existingApplications.map((app) => app.daycareId));
+      const eligibleDaycareIds = daycareIds.filter((id) => !existingSet.has(id));
+      const skippedDaycareIds = daycareIds.filter((id) => existingSet.has(id));
+
+      if (eligibleDaycareIds.length === 0) {
+        return successResponse(
+          {
+            createdCount: 0,
+            skippedCount: skippedDaycareIds.length,
+            createdIds: [],
+            skippedDaycareIds,
+            credits: null,
+          },
+          "All selected daycares already have active applications"
+        );
+      }
+
+      await this.creditModel.collection.findOneAndUpdate(
+        { userId },
+        { $setOnInsert: { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 } },
+        { upsert: true, setDefaultsOnInsert: true }
+      );
+
+      const creditsNeeded = eligibleDaycareIds.length;
+      const consumedWallet = await this.creditModel.collection.findOneAndUpdate(
+        { userId, remainingCredits: { $gte: creditsNeeded } },
+        {
+          $inc: {
+            usedCredits: creditsNeeded,
+            remainingCredits: -creditsNeeded,
+          },
+          $set: { lastCreditUsageAt: new Date() },
+        },
+        { new: true }
+      );
+
+      if (!consumedWallet) {
+        const wallet = await this.creditModel.collection.findOne({ userId }).lean();
+        const remainingCredits = wallet?.remainingCredits || 0;
+        return errorResponse(
+          `Insufficient credits. You selected ${creditsNeeded}, but only ${remainingCredits} credits remain.`,
+          400,
+          [{ remainingCredits, creditsNeeded }]
+        );
+      }
+
+      const docs = eligibleDaycareIds.map((daycareId) => ({
+        userId,
+        daycareId,
+        source: "auto_apply",
+        status: "pending",
+        parentName,
+        parentEmail,
+        parentPhone,
+        childName,
+        childDob,
+        preferredStartDate,
+        specialNotes: specialNotes || undefined,
+        // Keep legacy compatibility fields populated where practical.
+        startDate: preferredStartDate,
+        additionalNotes: specialNotes || undefined,
+      }));
+
+      let created = [];
+      try {
+        created = await ApplicationCollection.insertMany(docs, { ordered: true });
+      } catch (createError) {
+        // Compensate credits on write failure.
+        await this.creditModel.collection.findOneAndUpdate(
+          { userId },
+          {
+            $inc: {
+              usedCredits: -creditsNeeded,
+              remainingCredits: creditsNeeded,
+            },
+          }
+        );
+        throw createError;
+      }
+
+      return successResponse(
+        {
+          createdCount: created.length,
+          skippedCount: skippedDaycareIds.length,
+          createdIds: created.map((item) => item._id),
+          skippedDaycareIds,
+          credits: {
+            totalCredits: consumedWallet.totalCredits,
+            usedCredits: consumedWallet.usedCredits,
+            remainingCredits: consumedWallet.remainingCredits,
+          },
+        },
+        "Auto-apply applications submitted successfully"
+      );
+    } catch (error) {
+      console.error("Error submitting auto-apply applications:", error);
       return internalErrorResponse(error.message);
     }
   }
