@@ -45,6 +45,71 @@ router.get("/", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/applications/credits - Get user's remaining auto-apply credits
+router.get("/credits", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const ApplicationController = require("../controllers/applicationController");
+    const applicationController = new ApplicationController(req.db);
+
+    const result = await applicationController.getAutoApplyCredits(userId);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error fetching auto-apply credits:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
+// POST /api/applications/credits/grant - Grant credits (normally called after successful payment)
+router.post("/credits/grant", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const payload = req.body || {};
+    const ApplicationController = require("../controllers/applicationController");
+    const applicationController = new ApplicationController(req.db);
+
+    const result = await applicationController.grantAutoApplyCredits(
+      userId,
+      payload
+    );
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error granting auto-apply credits:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
+// POST /api/applications/auto-apply - Create one application per selected daycare
+router.post("/auto-apply", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const payload = req.body || {};
+    const ApplicationController = require("../controllers/applicationController");
+    const applicationController = new ApplicationController(req.db);
+
+    const result = await applicationController.submitAutoApplyApplications(
+      userId,
+      payload
+    );
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error submitting auto-apply applications:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 // GET /api/applications/:id - Get application by ID
 router.get("/:id", authenticateToken, async (req, res) => {
   try {

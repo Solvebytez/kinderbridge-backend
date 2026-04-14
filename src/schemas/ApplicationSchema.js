@@ -26,20 +26,35 @@ const applicationSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
+    source: {
+      type: String,
+      enum: {
+        values: ["manual", "auto_apply"],
+        message: "Source must be one of: manual, auto_apply",
+      },
+      default: "manual",
+      index: true,
+    },
     // Child information
     childAge: {
       type: String,
-      required: [true, "Child age is required"],
+      required: function () {
+        return this.source === "manual";
+      },
       trim: true,
     },
     daycareType: {
       type: String,
-      required: [true, "Daycare type is required"],
+      required: function () {
+        return this.source === "manual";
+      },
       trim: true,
     },
     startDate: {
       type: Date,
-      required: [true, "Start date is required"],
+      required: function () {
+        return this.source === "manual";
+      },
     },
     maxMonthlyFee: {
       type: String,
@@ -70,6 +85,31 @@ const applicationSchema = new mongoose.Schema(
       trim: true,
       maxlength: [1000, "Additional notes cannot exceed 1000 characters"],
     },
+    // Auto-apply 3-step form fields
+    childName: {
+      type: String,
+      trim: true,
+      required: function () {
+        return this.source === "auto_apply";
+      },
+    },
+    childDob: {
+      type: Date,
+      required: function () {
+        return this.source === "auto_apply";
+      },
+    },
+    preferredStartDate: {
+      type: Date,
+      required: function () {
+        return this.source === "auto_apply";
+      },
+    },
+    specialNotes: {
+      type: String,
+      trim: true,
+      maxlength: [1000, "Special notes cannot exceed 1000 characters"],
+    },
   },
   {
     timestamps: true,
@@ -81,6 +121,7 @@ applicationSchema.index({ userId: 1, createdAt: -1 });
 applicationSchema.index({ daycareId: 1, createdAt: -1 });
 applicationSchema.index({ status: 1, createdAt: -1 });
 applicationSchema.index({ userId: 1, daycareId: 1 });
+applicationSchema.index({ source: 1, createdAt: -1 });
 
 // Static method to create application
 applicationSchema.statics.createApplication = async function (applicationData) {
