@@ -44,6 +44,37 @@ const purchaseSchema = new mongoose.Schema({
     default: null,
     index: true
   },
+  /** Same as Stripe PaymentIntent id; kept for legacy DB unique index `paymentIntentId_1`. */
+  paymentIntentId: {
+    type: String,
+    default: null,
+    sparse: true,
+    index: true,
+  },
+  paymentType: {
+    type: String,
+    default: "report",
+    trim: true,
+    index: true,
+  },
+  daycareIds: {
+    type: [String],
+    default: [],
+  },
+  creditsGranted: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  processedAt: {
+    type: Date,
+    default: null,
+  },
+  webhookEventId: {
+    type: String,
+    default: null,
+    index: true,
+  },
   description: {
     type: String,
     default: null,
@@ -57,7 +88,7 @@ const purchaseSchema = new mongoose.Schema({
 purchaseSchema.index({ userId: 1, createdAt: -1 });
 purchaseSchema.index({ daycareId: 1, createdAt: -1 });
 purchaseSchema.index({ status: 1, createdAt: -1 });
-purchaseSchema.index({ stripePaymentId: 1 });
+purchaseSchema.index({ userId: 1, stripePaymentId: 1 });
 
 // Static method to get user purchases
 purchaseSchema.statics.getUserPurchases = async function(userId, options = {}) {

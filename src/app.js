@@ -6,7 +6,8 @@ const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
 const path = require("path");
 
-// Load environment variables
+// Load environment variables (.env is standard; config.env kept for older setups)
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 require("dotenv").config({ path: path.join(__dirname, "../config.env") });
 
 const app = express();
@@ -103,6 +104,19 @@ const authLimiter = rateLimit({
 // Cookie parser middleware (must be before body parser)
 app.use(cookieParser());
 
+// Stripe webhook must receive raw body for signature verification
+try {
+  const paymentsRoutes = require("./routes/payments");
+  app.post(
+    "/api/payments/webhook",
+    express.raw({ type: "application/json" }),
+    paymentsRoutes.handleWebhook
+  );
+  console.log("✅ Stripe webhook route loaded successfully");
+} catch (error) {
+  console.error("❌ Failed to load Stripe webhook route:", error.message);
+}
+
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -145,12 +159,14 @@ try {
   const favoriteRoutes = require("./routes/favorites");
   const applicationRoutes = require("./routes/applications");
   const contactLogRoutes = require("./routes/contactLogs");
+  const paymentsRoutes = require("./routes/payments");
 
   app.use("/api/daycares", daycareRoutes);
   app.use("/api/messages", messageRoutes);
   app.use("/api/favorites", favoriteRoutes);
   app.use("/api/applications", applicationRoutes);
   app.use("/api/contact-logs", contactLogRoutes);
+  app.use("/api/payments", paymentsRoutes.router);
   console.log("✅ Core routes loaded successfully");
 } catch (error) {
   console.error("❌ Failed to load core routes:", error.message);
@@ -181,6 +197,12 @@ try {
   app.use("/api/contact-logs", (req, res) => {
     res.status(503).json({
       error: "Contact logs service temporarily unavailable",
+      details: "Route loading failed during server startup",
+    });
+  });
+  app.use("/api/payments", (req, res) => {
+    res.status(503).json({
+      error: "Payments service temporarily unavailable",
       details: "Route loading failed during server startup",
     });
   });

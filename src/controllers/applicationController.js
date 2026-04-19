@@ -20,6 +20,44 @@ class ApplicationController {
     this.creditModel = new AutoApplyCredit(db);
   }
 
+  static INITIAL_AUTO_APPLY_CREDITS = 30;
+
+  async ensureStarterCredits(userId) {
+    const existing = await this.creditModel.collection.findOne({ userId }).lean();
+    if (!existing) return null;
+
+    const hasStarterGap =
+      (existing.totalCredits || 0) === 0 &&
+      (existing.usedCredits || 0) === 0 &&
+      (existing.remainingCredits || 0) === 0;
+
+    if (!hasStarterGap) {
+      return existing;
+    }
+
+    const now = new Date();
+    const upgraded = await this.creditModel.collection.findOneAndUpdate(
+      { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 },
+      {
+        $set: {
+          totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+          remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+          lastCreditGrantAt: now,
+        },
+        $push: {
+          grants: {
+            credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            note: "Initial starter credits",
+            grantedAt: now,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    return upgraded || existing;
+  }
+
   parseDateInput(value) {
     if (!value || typeof value !== "string") return null;
     const trimmed = value.trim();
@@ -229,14 +267,32 @@ class ApplicationController {
 
       const wallet = await this.creditModel.collection.findOneAndUpdate(
         { userId },
-        { $setOnInsert: { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 } },
+        {
+          $setOnInsert: {
+            userId,
+            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            usedCredits: 0,
+            remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            grants: [
+              {
+                credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+                note: "Initial starter credits",
+                grantedAt: new Date(),
+              },
+            ],
+            lastCreditGrantAt: new Date(),
+          },
+        },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
 
+      const hydratedWallet = await this.ensureStarterCredits(userId);
+      const finalWallet = hydratedWallet || wallet;
+
       return successResponse({
-        totalCredits: wallet.totalCredits,
-        usedCredits: wallet.usedCredits,
-        remainingCredits: wallet.remainingCredits,
+        totalCredits: finalWallet.totalCredits,
+        usedCredits: finalWallet.usedCredits,
+        remainingCredits: finalWallet.remainingCredits,
       });
     } catch (error) {
       console.error("Error getting auto-apply credits:", error);
@@ -266,11 +322,11 @@ class ApplicationController {
       const wallet = await this.creditModel.collection.findOneAndUpdate(
         { userId },
         {
+          // Do not set totalCredits/remainingCredits in $setOnInsert: same paths
+          // are updated with $inc; MongoDB rejects ConflictingUpdateOperators (40).
           $setOnInsert: {
             userId,
-            totalCredits: 0,
             usedCredits: 0,
-            remainingCredits: 0,
           },
           $inc: {
             totalCredits: credits,
@@ -371,9 +427,25 @@ class ApplicationController {
 
       await this.creditModel.collection.findOneAndUpdate(
         { userId },
-        { $setOnInsert: { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 } },
+        {
+          $setOnInsert: {
+            userId,
+            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            usedCredits: 0,
+            remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            grants: [
+              {
+                credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+                note: "Initial starter credits",
+                grantedAt: new Date(),
+              },
+            ],
+            lastCreditGrantAt: new Date(),
+          },
+        },
         { upsert: true, setDefaultsOnInsert: true }
       );
+      await this.ensureStarterCredits(userId);
 
       const creditsNeeded = eligibleDaycareIds.length;
       const consumedWallet = await this.creditModel.collection.findOneAndUpdate(

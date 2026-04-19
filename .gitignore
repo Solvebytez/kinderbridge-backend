@@ -4,16 +4,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables and configuration files
+# Environment variables — never commit (includes .env.example templates)
 .env
-.env.local
-.env.development
-.env.production
-.env.test
+.env.*
+*.env
 config.env
 config.production.env
 config.development.env
-*.env
 
 # Logs
 logs/
