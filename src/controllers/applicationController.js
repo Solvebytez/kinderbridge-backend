@@ -23,39 +23,10 @@ class ApplicationController {
   static INITIAL_AUTO_APPLY_CREDITS = 30;
 
   async ensureStarterCredits(userId) {
+    // Starter credits were removed. Credits are only granted after payment.
+    // Keep this method for backward compatibility, but do not mutate the wallet.
     const existing = await this.creditModel.collection.findOne({ userId }).lean();
-    if (!existing) return null;
-
-    const hasStarterGap =
-      (existing.totalCredits || 0) === 0 &&
-      (existing.usedCredits || 0) === 0 &&
-      (existing.remainingCredits || 0) === 0;
-
-    if (!hasStarterGap) {
-      return existing;
-    }
-
-    const now = new Date();
-    const upgraded = await this.creditModel.collection.findOneAndUpdate(
-      { userId, totalCredits: 0, usedCredits: 0, remainingCredits: 0 },
-      {
-        $set: {
-          totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-          remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-          lastCreditGrantAt: now,
-        },
-        $push: {
-          grants: {
-            credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-            note: "Initial starter credits",
-            grantedAt: now,
-          },
-        },
-      },
-      { new: true }
-    );
-
-    return upgraded || existing;
+    return existing || null;
   }
 
   parseDateInput(value) {
@@ -270,38 +241,23 @@ class ApplicationController {
         {
           $setOnInsert: {
             userId,
-            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            totalCredits: 0,
             usedCredits: 0,
-            remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-            grants: [
-              {
-                credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-                note: "Initial starter credits",
-                grantedAt: new Date(),
-              },
-            ],
-            lastCreditGrantAt: new Date(),
+            remainingCredits: 0,
+            grants: [],
+            lastCreditGrantAt: null,
           },
         },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
 
-      const hydratedWallet = await this.ensureStarterCredits(userId);
-      const finalWallet = hydratedWallet || wallet;
+      const finalWallet = wallet;
 
       return successResponse({
-        // Credits are treated as a single "pack" (max 30). Keep the UI stable as x/30.
-        totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-        usedCredits:
-          ApplicationController.INITIAL_AUTO_APPLY_CREDITS -
-          Math.min(
-            ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-            Math.max(0, Number(finalWallet.remainingCredits || 0))
-          ),
-        remainingCredits: Math.min(
-          ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-          Math.max(0, Number(finalWallet.remainingCredits || 0))
-        ),
+        // Pack size is 30, but wallets start at 0 until payment grants a pack.
+        totalCredits: Number(finalWallet.totalCredits || 0),
+        usedCredits: Number(finalWallet.usedCredits || 0),
+        remainingCredits: Number(finalWallet.remainingCredits || 0),
       });
     } catch (error) {
       console.error("Error getting auto-apply credits:", error);
@@ -457,22 +413,15 @@ class ApplicationController {
         {
           $setOnInsert: {
             userId,
-            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            totalCredits: 0,
             usedCredits: 0,
-            remainingCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-            grants: [
-              {
-                credits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-                note: "Initial starter credits",
-                grantedAt: new Date(),
-              },
-            ],
-            lastCreditGrantAt: new Date(),
+            remainingCredits: 0,
+            grants: [],
+            lastCreditGrantAt: null,
           },
         },
         { upsert: true, setDefaultsOnInsert: true }
       );
-      await this.ensureStarterCredits(userId);
 
       const creditsNeeded = eligibleDaycareIds.length;
       const consumedWallet = await this.creditModel.collection.findOneAndUpdate(
@@ -538,17 +487,9 @@ class ApplicationController {
           createdIds: created.map((item) => item._id),
           skippedDaycareIds,
           credits: {
-            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-            usedCredits:
-              ApplicationController.INITIAL_AUTO_APPLY_CREDITS -
-              Math.min(
-                ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-                Math.max(0, Number(consumedWallet.remainingCredits || 0))
-              ),
-            remainingCredits: Math.min(
-              ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
-              Math.max(0, Number(consumedWallet.remainingCredits || 0))
-            ),
+            totalCredits: Number(consumedWallet.totalCredits || 0),
+            usedCredits: Number(consumedWallet.usedCredits || 0),
+            remainingCredits: Number(consumedWallet.remainingCredits || 0),
           },
         },
         "Auto-apply applications submitted successfully"
