@@ -290,9 +290,18 @@ class ApplicationController {
       const finalWallet = hydratedWallet || wallet;
 
       return successResponse({
-        totalCredits: finalWallet.totalCredits,
-        usedCredits: finalWallet.usedCredits,
-        remainingCredits: finalWallet.remainingCredits,
+        // Credits are treated as a single "pack" (max 30). Keep the UI stable as x/30.
+        totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+        usedCredits:
+          ApplicationController.INITIAL_AUTO_APPLY_CREDITS -
+          Math.min(
+            ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            Math.max(0, Number(finalWallet.remainingCredits || 0))
+          ),
+        remainingCredits: Math.min(
+          ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+          Math.max(0, Number(finalWallet.remainingCredits || 0))
+        ),
       });
     } catch (error) {
       console.error("Error getting auto-apply credits:", error);
@@ -319,37 +328,61 @@ class ApplicationController {
         typeof payload.note === "string" ? payload.note.trim() || null : null;
 
       const now = new Date();
+      const PACK = ApplicationController.INITIAL_AUTO_APPLY_CREDITS;
+
+      // Credits behave like a single pack (max 30). A new purchase tops up remaining credits
+      // up to PACK (rather than accumulating totalCredits to 60/90/120...).
       const wallet = await this.creditModel.collection.findOneAndUpdate(
         { userId },
-        {
-          // Do not set totalCredits/remainingCredits in $setOnInsert: same paths
-          // are updated with $inc; MongoDB rejects ConflictingUpdateOperators (40).
-          $setOnInsert: {
-            userId,
-            usedCredits: 0,
-          },
-          $inc: {
-            totalCredits: credits,
-            remainingCredits: credits,
-          },
-          $set: { lastCreditGrantAt: now },
-          $push: {
-            grants: {
-              credits,
-              paymentReference,
-              note,
-              grantedAt: now,
+        [
+          {
+            $set: {
+              userId: { $ifNull: ["$userId", userId] },
+              totalCredits: { $ifNull: ["$totalCredits", PACK] },
+              remainingCredits: { $ifNull: ["$remainingCredits", 0] },
+              usedCredits: { $ifNull: ["$usedCredits", 0] },
             },
           },
-        },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
+          {
+            $set: {
+              totalCredits: PACK,
+              remainingCredits: {
+                $min: [PACK, { $add: ["$remainingCredits", credits] }],
+              },
+              lastCreditGrantAt: now,
+            },
+          },
+          {
+            $set: {
+              usedCredits: { $subtract: [PACK, "$remainingCredits"] },
+            },
+          },
+          {
+            $set: {
+              grants: {
+                $concatArrays: [
+                  { $ifNull: ["$grants", []] },
+                  [
+                    {
+                      credits,
+                      paymentReference,
+                      note,
+                      grantedAt: now,
+                    },
+                  ],
+                ],
+              },
+            },
+          },
+        ],
+        { new: true, upsert: true }
       );
 
       const response = successResponse(
         {
-          totalCredits: wallet.totalCredits,
-          usedCredits: wallet.usedCredits,
-          remainingCredits: wallet.remainingCredits,
+          totalCredits: PACK,
+          usedCredits: PACK - Math.min(PACK, Math.max(0, Number(wallet.remainingCredits || 0))),
+          remainingCredits: Math.min(PACK, Math.max(0, Number(wallet.remainingCredits || 0))),
           grantedCredits: credits,
         },
         "Credits granted successfully"
@@ -511,9 +544,17 @@ class ApplicationController {
           createdIds: created.map((item) => item._id),
           skippedDaycareIds,
           credits: {
-            totalCredits: consumedWallet.totalCredits,
-            usedCredits: consumedWallet.usedCredits,
-            remainingCredits: consumedWallet.remainingCredits,
+            totalCredits: ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+            usedCredits:
+              ApplicationController.INITIAL_AUTO_APPLY_CREDITS -
+              Math.min(
+                ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+                Math.max(0, Number(consumedWallet.remainingCredits || 0))
+              ),
+            remainingCredits: Math.min(
+              ApplicationController.INITIAL_AUTO_APPLY_CREDITS,
+              Math.max(0, Number(consumedWallet.remainingCredits || 0))
+            ),
           },
         },
         "Auto-apply applications submitted successfully"

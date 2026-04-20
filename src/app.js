@@ -167,6 +167,7 @@ try {
   const applicationRoutes = require("./routes/applications");
   const contactLogRoutes = require("./routes/contactLogs");
   const paymentsRoutes = require("./routes/payments");
+  const reportsRoutes = require("./routes/reports");
 
   app.use("/api/daycares", daycareRoutes);
   app.use("/api/messages", messageRoutes);
@@ -174,6 +175,7 @@ try {
   app.use("/api/applications", applicationRoutes);
   app.use("/api/contact-logs", contactLogRoutes);
   app.use("/api/payments", paymentsRoutes.router);
+  app.use("/api/reports", reportsRoutes);
   console.log("✅ Core routes loaded successfully");
 } catch (error) {
   console.error("❌ Failed to load core routes:", error.message);
@@ -210,6 +212,12 @@ try {
   app.use("/api/payments", (req, res) => {
     res.status(503).json({
       error: "Payments service temporarily unavailable",
+      details: "Route loading failed during server startup",
+    });
+  });
+  app.use("/api/reports", (req, res) => {
+    res.status(503).json({
+      error: "Reports service temporarily unavailable",
       details: "Route loading failed during server startup",
     });
   });
