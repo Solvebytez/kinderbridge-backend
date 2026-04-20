@@ -1,11 +1,15 @@
 // PDF Report Generator Service
 const PDFDocument = require('pdfkit');
 
-function generateDaycareReportPDF(daycares, userEmail) {
+function generateDaycareReportPDF(daycares, userEmail, options = {}) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ margin: 50 });
       const buffers = [];
+      const title =
+        typeof options?.title === "string" && options.title.trim().length > 0
+          ? options.title.trim()
+          : "Top 30 Daycare Report";
       
       // Collect PDF data
       doc.on('data', buffers.push.bind(buffers));
@@ -18,7 +22,7 @@ function generateDaycareReportPDF(daycares, userEmail) {
       // Header
       doc.fontSize(24)
          .fillColor('#1e40af')
-         .text('Top 30 Daycare Report', { align: 'center' });
+         .text(title, { align: 'center' });
       
       doc.moveDown();
       doc.fontSize(12)
