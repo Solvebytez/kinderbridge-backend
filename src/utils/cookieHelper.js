@@ -44,14 +44,24 @@ const setAccessTokenCookie = (res, token) => {
     tokenLength: token.length
   });
   
+  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  const cookieSecure =
+    typeof process.env.COOKIE_SECURE === 'string'
+      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
+      : isProduction;
+  const cookieDomain =
+    typeof process.env.COOKIE_DOMAIN === 'string'
+      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
+      : (isProduction ? '.kinderbridge.ca' : undefined);
+
   const cookieOptions = {
     httpOnly: true,
-    secure: isProduction, // Only send over HTTPS in production
-    sameSite: isProduction ? 'lax' : 'lax', // Use 'lax' when using subdomain (api.kinderbridge.ca)
+    secure: cookieSecure, // NOTE: SameSite=None requires Secure
+    sameSite: cookieSameSite, // 'none' for localhost -> prod API cookie auth
     maxAge: maxAge,
     path: '/',
-    // Set domain to share cookies across subdomains (www.kinderbridge.ca and api.kinderbridge.ca)
-    domain: isProduction ? '.kinderbridge.ca' : undefined,
+    // Set to share cookies across subdomains, or leave undefined for host-only cookies.
+    domain: cookieDomain,
   };
   
   console.log('🍪 [COOKIE_HELPER] Cookie options:', cookieOptions);
@@ -70,15 +80,24 @@ const setRefreshTokenCookie = (res, token) => {
   const isProduction = process.env.NODE_ENV === 'production';
   const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
   const maxAge = parseExpiryToMs(expiresIn);
-  
+
+  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  const cookieSecure =
+    typeof process.env.COOKIE_SECURE === 'string'
+      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
+      : isProduction;
+  const cookieDomain =
+    typeof process.env.COOKIE_DOMAIN === 'string'
+      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
+      : (isProduction ? '.kinderbridge.ca' : undefined);
+
   res.cookie('refreshToken', token, {
     httpOnly: true,
-    secure: isProduction, // Only send over HTTPS in production
-    sameSite: isProduction ? 'lax' : 'lax', // Use 'lax' when using subdomain (api.kinderbridge.ca)
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     maxAge: maxAge,
     path: '/',
-    // Set domain to share cookies across subdomains (www.kinderbridge.ca and api.kinderbridge.ca)
-    domain: isProduction ? '.kinderbridge.ca' : undefined,
+    domain: cookieDomain,
   });
 };
 
@@ -88,21 +107,31 @@ const setRefreshTokenCookie = (res, token) => {
  */
 const clearAuthCookies = (res) => {
   const isProduction = process.env.NODE_ENV === 'production';
+
+  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  const cookieSecure =
+    typeof process.env.COOKIE_SECURE === 'string'
+      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
+      : isProduction;
+  const cookieDomain =
+    typeof process.env.COOKIE_DOMAIN === 'string'
+      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
+      : (isProduction ? '.kinderbridge.ca' : undefined);
   
   res.clearCookie('accessToken', {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'lax' : 'lax',
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     path: '/',
-    domain: isProduction ? '.kinderbridge.ca' : undefined,
+    domain: cookieDomain,
   });
   
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'lax' : 'lax',
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     path: '/',
-    domain: isProduction ? '.kinderbridge.ca' : undefined,
+    domain: cookieDomain,
   });
 };
 
