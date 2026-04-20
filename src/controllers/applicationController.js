@@ -330,60 +330,54 @@ class ApplicationController {
       const now = new Date();
       const PACK = ApplicationController.INITIAL_AUTO_APPLY_CREDITS;
 
-      // Credits behave like a single pack (max 30). A new purchase tops up remaining credits
-      // up to PACK (rather than accumulating totalCredits to 60/90/120...).
+      // Carry-forward pack model:
+      // A $29 payment grants a 30-credit pack that can be consumed over time.
+      // User should NOT pay again until pack is fully consumed (remainingCredits === 0).
+      const existing = await this.creditModel.collection.findOne({ userId }).lean();
+      const existingRemaining = Number(existing?.remainingCredits ?? 0);
+      const normalizedRemaining = Number.isFinite(existingRemaining)
+        ? Math.max(0, existingRemaining)
+        : 0;
+
+      if (existing && normalizedRemaining > 0) {
+        return errorResponse(
+          `You still have ${normalizedRemaining} credits remaining. Please use them before purchasing again.`,
+          400,
+          [{ remainingCredits: normalizedRemaining }]
+        );
+      }
+
       const wallet = await this.creditModel.collection.findOneAndUpdate(
         { userId },
-        [
-          {
-            $set: {
-              userId: { $ifNull: ["$userId", userId] },
-              totalCredits: { $ifNull: ["$totalCredits", PACK] },
-              remainingCredits: { $ifNull: ["$remainingCredits", 0] },
-              usedCredits: { $ifNull: ["$usedCredits", 0] },
+        {
+          $setOnInsert: {
+            userId,
+            grants: [],
+          },
+          $set: {
+            totalCredits: PACK,
+            usedCredits: 0,
+            remainingCredits: PACK,
+            lastCreditGrantAt: now,
+          },
+          $push: {
+            grants: {
+              credits: PACK,
+              paymentReference,
+              note,
+              grantedAt: now,
             },
           },
-          {
-            $set: {
-              totalCredits: PACK,
-              remainingCredits: {
-                $min: [PACK, { $add: ["$remainingCredits", credits] }],
-              },
-              lastCreditGrantAt: now,
-            },
-          },
-          {
-            $set: {
-              usedCredits: { $subtract: [PACK, "$remainingCredits"] },
-            },
-          },
-          {
-            $set: {
-              grants: {
-                $concatArrays: [
-                  { $ifNull: ["$grants", []] },
-                  [
-                    {
-                      credits,
-                      paymentReference,
-                      note,
-                      grantedAt: now,
-                    },
-                  ],
-                ],
-              },
-            },
-          },
-        ],
-        { new: true, upsert: true }
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
 
       const response = successResponse(
         {
           totalCredits: PACK,
-          usedCredits: PACK - Math.min(PACK, Math.max(0, Number(wallet.remainingCredits || 0))),
-          remainingCredits: Math.min(PACK, Math.max(0, Number(wallet.remainingCredits || 0))),
-          grantedCredits: credits,
+          usedCredits: Number(wallet.usedCredits || 0),
+          remainingCredits: Number(wallet.remainingCredits || 0),
+          grantedCredits: PACK,
         },
         "Credits granted successfully"
       );

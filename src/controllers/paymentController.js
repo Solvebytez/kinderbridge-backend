@@ -57,6 +57,32 @@ class PaymentController {
         return errorResponse("At least one daycare ID is required", 400);
       }
 
+      // Enforce pack rules: do not charge again while user still has credits remaining.
+      // This matches "pay once, then reuse remaining credits until 30/30 used."
+      const PACK = this.getAutoApplyCredits();
+      const wallet = await this.applicationController.creditModel.collection
+        .findOne({ userId })
+        .lean();
+      const remaining = Number(wallet?.remainingCredits ?? 0);
+      const normalizedRemaining = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
+      const creditsNeeded = daycareIds.length;
+
+      if (normalizedRemaining >= creditsNeeded) {
+        return errorResponse(
+          "No payment required. You have enough credits to submit this checkout.",
+          400,
+          [{ remainingCredits: normalizedRemaining, creditsNeeded }]
+        );
+      }
+
+      if (normalizedRemaining > 0) {
+        return errorResponse(
+          `You have ${normalizedRemaining} credits remaining. Please submit up to ${normalizedRemaining} daycares before purchasing another pack.`,
+          400,
+          [{ remainingCredits: normalizedRemaining, creditsNeeded, packSize: PACK }]
+        );
+      }
+
       const amountCents = this.getAutoApplyAmountCents();
       const creditsToGrant = this.getAutoApplyCredits();
       const currency = (process.env.STRIPE_CURRENCY || "cad").toLowerCase();
