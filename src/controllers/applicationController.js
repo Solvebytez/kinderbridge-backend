@@ -286,6 +286,25 @@ class ApplicationController {
       const now = new Date();
       const PACK = ApplicationController.INITIAL_AUTO_APPLY_CREDITS;
 
+      // Idempotency: if we already recorded this paymentReference, return current wallet as success.
+      if (paymentReference) {
+        const existingByRef = await this.creditModel.collection.findOne(
+          { userId, "grants.paymentReference": paymentReference },
+          { projection: { totalCredits: 1, usedCredits: 1, remainingCredits: 1 } }
+        );
+        if (existingByRef) {
+          return successResponse(
+            {
+              totalCredits: Number(existingByRef.totalCredits || 0),
+              usedCredits: Number(existingByRef.usedCredits || 0),
+              remainingCredits: Number(existingByRef.remainingCredits || 0),
+              grantedCredits: 0,
+            },
+            "Credits already granted for this payment"
+          );
+        }
+      }
+
       // Carry-forward pack model:
       // A $29 payment grants a 30-credit pack that can be consumed over time.
       // User should NOT pay again until pack is fully consumed (remainingCredits === 0).
@@ -303,12 +322,11 @@ class ApplicationController {
         );
       }
 
-      const wallet = await this.creditModel.collection.findOneAndUpdate(
+      const walletResult = await this.creditModel.collection.findOneAndUpdate(
         { userId },
         {
           $setOnInsert: {
             userId,
-            grants: [],
           },
           $set: {
             totalCredits: PACK,
@@ -325,8 +343,9 @@ class ApplicationController {
             },
           },
         },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: "after" }
       );
+      const wallet = walletResult?.value;
 
       const response = successResponse(
         {
