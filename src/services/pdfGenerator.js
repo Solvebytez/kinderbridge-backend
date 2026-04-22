@@ -10,6 +10,12 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
         typeof options?.title === "string" && options.title.trim().length > 0
           ? options.title.trim()
           : "Top 30 Daycare Report";
+      const safeText = (value) =>
+        String(value ?? "")
+          // pdfkit default fonts commonly can't render emoji; remove them to avoid mojibake.
+          .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
+          .replace(/\s+/g, " ")
+          .trim();
       
       // Collect PDF data
       doc.on('data', buffers.push.bind(buffers));
@@ -22,12 +28,12 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
       // Header
       doc.fontSize(24)
          .fillColor('#1e40af')
-         .text(title, { align: 'center' });
+         .text(safeText(title), { align: 'center' });
       
       doc.moveDown();
       doc.fontSize(12)
          .fillColor('#6b7280')
-         .text(`Generated for: ${userEmail}`, { align: 'center' });
+         .text(`Generated for: ${safeText(userEmail)}`, { align: 'center' });
       doc.text(`Generated on: ${new Date().toLocaleDateString('en-CA', { 
         year: 'numeric', 
         month: 'long', 
@@ -59,7 +65,7 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
         // Daycare Name
         doc.fontSize(18)
            .fillColor('#1e40af')
-           .text(`${index + 1}. ${daycare.name || 'Unnamed Daycare'}`, { 
+           .text(`${index + 1}. ${safeText(daycare.name || 'Unnamed Daycare')}`, { 
              underline: true,
              continued: false
            });
@@ -71,43 +77,43 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
            .fillColor('#000000');
         
         if (daycare.location || daycare.city) {
-          doc.text(`📍 Location: ${daycare.location || daycare.city || 'N/A'}`, { indent: 20 });
+          doc.text(`Location: ${safeText(daycare.location || daycare.city || 'N/A')}`, { indent: 20 });
         }
         
         if (daycare.address) {
-          doc.text(`🏠 Address: ${daycare.address}`, { indent: 20 });
+          doc.text(`Address: ${safeText(daycare.address)}`, { indent: 20 });
         }
         
         if (daycare.rating) {
-          const stars = '⭐'.repeat(Math.floor(daycare.rating || 0));
-          doc.text(`⭐ Rating: ${daycare.rating || 'N/A'} ${stars}`, { indent: 20 });
+          const stars = '*'.repeat(Math.floor(Number(daycare.rating) || 0));
+          doc.text(`Rating: ${safeText(daycare.rating || 'N/A')}${stars ? ` ${stars}` : ""}`, { indent: 20 });
         }
         
         if (daycare.price) {
-          doc.text(`💰 Price: ${daycare.price}`, { indent: 20 });
+          doc.text(`Price: ${safeText(daycare.price)}`, { indent: 20 });
         }
         
         if (daycare.phone) {
-          doc.text(`📞 Phone: ${daycare.phone}`, { indent: 20 });
+          doc.text(`Phone: ${safeText(daycare.phone)}`, { indent: 20 });
         }
         
         if (daycare.email) {
-          doc.text(`📧 Email: ${daycare.email}`, { indent: 20 });
+          doc.text(`Email: ${safeText(daycare.email)}`, { indent: 20 });
         }
         
         if (daycare.website) {
-          doc.text(`🌐 Website: ${daycare.website}`, { indent: 20 });
+          doc.text(`Website: ${safeText(daycare.website)}`, { indent: 20 });
         }
         
         if (daycare.hours) {
-          doc.text(`🕐 Hours: ${daycare.hours}`, { indent: 20 });
+          doc.text(`Hours: ${safeText(daycare.hours)}`, { indent: 20 });
         }
         
         if (daycare.ageRange) {
           const ageRange = Array.isArray(daycare.ageRange) 
             ? daycare.ageRange.join(', ') 
             : daycare.ageRange;
-          doc.text(`👶 Age Range: ${ageRange || 'N/A'}`, { indent: 20 });
+          doc.text(`Age Range: ${safeText(ageRange || 'N/A')}`, { indent: 20 });
         }
         
         doc.moveDown(0.5);
@@ -117,7 +123,7 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
           doc.fontSize(10)
              .fillColor('#4b5563')
              .text('Description:', { indent: 20, underline: true });
-          doc.text(daycare.description, { 
+          doc.text(safeText(daycare.description), { 
             indent: 20,
             align: 'left',
             width: 500
@@ -132,7 +138,7 @@ function generateDaycareReportPDF(daycares, userEmail, options = {}) {
              .fillColor('#4b5563')
              .text('Features:', { indent: 20, underline: true });
           daycare.features.forEach(feature => {
-            doc.text(`  • ${feature}`, { indent: 20 });
+            doc.text(`  - ${safeText(feature)}`, { indent: 20 });
           });
         }
         
