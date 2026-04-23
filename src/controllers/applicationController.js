@@ -359,9 +359,7 @@ class ApplicationController {
         }
       }
 
-      // Carry-forward pack model:
-      // A $29 payment grants a 30-credit pack that can be consumed over time.
-      // User should NOT pay again until pack is fully consumed (remainingCredits === 0).
+      // Single-pack model: user should NOT buy another pack until the current pack is consumed.
       const existing = await this.creditModel.collection.findOne({ userId }).lean();
       const existingRemaining = Number(existing?.remainingCredits ?? 0);
       const normalizedRemaining = Number.isFinite(existingRemaining)

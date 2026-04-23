@@ -90,8 +90,6 @@ class PaymentController {
         return errorResponse("At least one daycare ID is required", 400);
       }
 
-      // Enforce pack rules: do not charge again while user still has credits remaining.
-      // This matches "pay once, then reuse remaining credits until 30/30 used."
       const PACK = this.getAutoApplyCredits();
       const wallet = await this.applicationController.creditModel.collection
         .findOne({ userId })
