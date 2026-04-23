@@ -136,7 +136,7 @@ router.put("/:id/status", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, portal, responseMessage } = req.body || {};
 
     if (!status) {
       return res.status(400).json({
@@ -151,7 +151,8 @@ router.put("/:id/status", authenticateToken, async (req, res) => {
     const result = await applicationController.updateApplicationStatus(
       id,
       status,
-      userId
+      userId,
+      { portal, responseMessage }
     );
     res.status(result.statusCode).json(result.body);
   } catch (error) {

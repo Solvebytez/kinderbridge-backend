@@ -19,9 +19,10 @@ const applicationSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ["pending", "accepted", "rejected", "withdrawn"],
+        // Includes dashboard-style tracking states used by frontend.
+        values: ["pending", "viewed", "follow_up", "responded", "accepted", "rejected", "withdrawn"],
         message:
-          "Status must be one of: pending, accepted, rejected, withdrawn",
+          "Status must be one of: pending, viewed, follow_up, responded, accepted, rejected, withdrawn",
       },
       default: "pending",
       index: true,
@@ -109,6 +110,18 @@ const applicationSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: [1000, "Special notes cannot exceed 1000 characters"],
+    },
+
+    // Dashboard tracking fields (free-form; default empty)
+    portal: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    responseMessage: {
+      type: String,
+      default: "",
+      trim: true,
     },
   },
   {

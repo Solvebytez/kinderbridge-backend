@@ -155,7 +155,7 @@ class ApplicationController {
    * @param {string} userId - User ID (for authorization)
    * @returns {Object} Response with updated application
    */
-  async updateApplicationStatus(applicationId, status, userId) {
+  async updateApplicationStatus(applicationId, status, userId, updatePayload = {}) {
     try {
       if (!applicationId) {
         return errorResponse("Application ID is required", 400);
@@ -165,21 +165,75 @@ class ApplicationController {
         return errorResponse("Status is required", 400);
       }
 
-      const validStatuses = ["pending", "accepted", "rejected", "withdrawn"];
-      if (!validStatuses.includes(status)) {
+      const raw = String(status).trim();
+      const normalized = raw.toLowerCase();
+      // Accept frontend labels too (e.g. "Responses", "Follow-Ups").
+      const aliasMap = {
+        pending: "pending",
+        viewed: "viewed",
+        "follow-ups": "follow_up",
+        "follow ups": "follow_up",
+        followups: "follow_up",
+        followup: "follow_up",
+        "follow-up": "follow_up",
+        "follow up": "follow_up",
+        responses: "responded",
+        response: "responded",
+        responded: "responded",
+        accepted: "accepted",
+        rejected: "rejected",
+        withdrawn: "withdrawn",
+      };
+
+      const mapped = aliasMap[normalized] || null;
+
+      const validStatuses = [
+        "pending",
+        "viewed",
+        "follow_up",
+        "responded",
+        "accepted",
+        "rejected",
+        "withdrawn",
+      ];
+      if (!mapped || !validStatuses.includes(mapped)) {
         return errorResponse(
           `Status must be one of: ${validStatuses.join(", ")}`,
           400
         );
       }
 
+      const portal =
+        typeof updatePayload?.portal === "string" ? updatePayload.portal.trim() : null;
+      const responseMessage =
+        typeof updatePayload?.responseMessage === "string"
+          ? updatePayload.responseMessage
+          : null;
+
       const application = await this.applicationModel.updateApplicationStatus(
         applicationId,
-        status,
+        mapped,
         userId
       );
 
-      const response = successResponse(application);
+      if (portal !== null || responseMessage !== null) {
+        await this.applicationModel.collection.findOneAndUpdate(
+          { _id: applicationId, userId },
+          {
+            $set: {
+              ...(portal !== null ? { portal } : {}),
+              ...(responseMessage !== null ? { responseMessage: String(responseMessage) } : {}),
+            },
+          },
+          { new: true }
+        );
+      }
+
+      const refreshed = await this.applicationModel.collection
+        .findById(applicationId)
+        .lean();
+
+      const response = successResponse(refreshed || application);
       response.body.message = "Application status updated successfully";
       return response;
     } catch (error) {
