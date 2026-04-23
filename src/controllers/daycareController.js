@@ -84,6 +84,26 @@ class DaycareController {
   }
 
   /**
+   * Batch fetch daycares by ids (ObjectId, legacy id, or slug)
+   * @param {string[]} ids
+   */
+  async getDaycaresByIds(ids) {
+    try {
+      const arr = Array.isArray(ids) ? ids : [];
+      const daycares = await this.daycareModel.getDaycaresByIds(arr);
+      const response = successResponse(daycares);
+      response.body.metadata = {
+        requestedCount: arr.length,
+        returnedCount: daycares.length,
+      };
+      return response;
+    } catch (error) {
+      console.error("Error fetching daycares by ids:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
+
+  /**
    * Get all unique locations
    * @returns {Object} Response with all unique city locations
    */

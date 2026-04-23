@@ -19,6 +19,23 @@ router.post("/create-intent", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/payments/purchases?status=completed&limit=50&skip=0
+router.get("/purchases", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const paymentController = new PaymentController(req.db);
+    const result = await paymentController.listUserPurchases(userId, req.query || {});
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error listing purchases:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 router.get("/status/:paymentIntentId", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;

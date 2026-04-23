@@ -736,6 +736,37 @@ class DaycareModel {
 
     return errors;
   }
+
+  /**
+   * Batch fetch daycares by identifiers (ObjectId, legacy `id`, or `slug`).
+   * @param {string[]} ids
+   * @returns {Array} Array of daycares
+   */
+  async getDaycaresByIds(ids = []) {
+    await this.ensureConnection();
+
+    const raw = Array.isArray(ids) ? ids : [];
+    const normalized = [...new Set(raw.map((v) => String(v).trim()).filter(Boolean))];
+    if (normalized.length === 0) return [];
+
+    // Avoid unbounded queries.
+    const limited = normalized.slice(0, 200);
+
+    const mongoose = require("mongoose");
+    const objectIds = limited
+      .filter((v) => mongoose.Types.ObjectId.isValid(v))
+      .map((v) => new mongoose.Types.ObjectId(v));
+
+    const filter = {
+      $or: [
+        ...(objectIds.length > 0 ? [{ _id: { $in: objectIds } }] : []),
+        { id: { $in: limited } },
+        { slug: { $in: limited } },
+      ],
+    };
+
+    return await Daycare.find(filter).lean();
+  }
 }
 
 module.exports = DaycareModel;

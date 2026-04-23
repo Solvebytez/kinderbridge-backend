@@ -43,6 +43,39 @@ class PaymentController {
       : [];
   }
 
+  async listUserPurchases(userId, options = {}) {
+    try {
+      if (!userId) {
+        return errorResponse("User ID is required", 401);
+      }
+
+      const limitRaw = Number(options?.limit ?? 50);
+      const skipRaw = Number(options?.skip ?? 0);
+      const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, Math.trunc(limitRaw))) : 50;
+      const skip = Number.isFinite(skipRaw) ? Math.max(0, Math.trunc(skipRaw)) : 0;
+      const status =
+        typeof options?.status === "string" && options.status.trim()
+          ? options.status.trim()
+          : null;
+
+      const filter = { userId };
+      if (status) {
+        filter.status = status;
+      }
+
+      const purchases = await Purchase.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      return successResponse(purchases);
+    } catch (error) {
+      console.error("Error listing purchases:", error);
+      return internalErrorResponse(error.message);
+    }
+  }
+
   async createPaymentIntent(userId, payload = {}) {
     try {
       if (!userId) {

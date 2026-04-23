@@ -57,6 +57,24 @@ router.get("/detail/:id", async (req, res) => {
   }
 });
 
+// POST /api/daycares/by-ids - Batch fetch daycares by ids
+router.post("/by-ids", async (req, res) => {
+  try {
+    const ids = req.body?.ids;
+    const DaycareController = require("../controllers/daycareController");
+    const daycareController = new DaycareController(req.db);
+    const result = await daycareController.getDaycaresByIds(ids);
+    res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    console.error("Error fetching daycares by ids:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 // GET /api/daycares/locations - Get all unique locations
 router.get("/locations/all", async (req, res) => {
   try {
