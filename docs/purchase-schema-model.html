@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KinderBridge – Purchase Schema Model</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #0f1a2e;
+        --text: #e8eefc;
+        --muted: #b9c6e6;
+        --accent: #ff8a3d;
+        --good: #33d17a;
+        --warn: #ffcc66;
+        --border: rgba(255, 255, 255, 0.12);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+          "Apple Color Emoji", "Segoe UI Emoji";
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        background: radial-gradient(1200px 600px at 20% -10%, #23345f 0%, transparent 60%),
+          radial-gradient(900px 500px at 90% 0%, #4a235a 0%, transparent 55%), var(--bg);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 32px 18px 72px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        letter-spacing: 0.2px;
+      }
+
+      .sub {
+        color: var(--muted);
+        margin-bottom: 18px;
+        line-height: 1.5;
+      }
+
+      .card {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 16px 14px;
+        margin: 14px 0;
+        box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
+      }
+
+      h2 {
+        font-size: 18px;
+        margin: 0 0 10px;
+      }
+
+      h3 {
+        margin: 14px 0 10px;
+        font-size: 14px;
+        letter-spacing: 0.2px;
+        color: #f3f6ff;
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+
+      li {
+        margin: 8px 0;
+        line-height: 1.45;
+      }
+
+      .k {
+        font-family: var(--mono);
+        font-size: 13px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        padding: 2px 6px;
+        border-radius: 8px;
+        color: #f3f6ff;
+        white-space: nowrap;
+      }
+
+      .pill {
+        display: inline-block;
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        margin-right: 8px;
+        color: var(--muted);
+      }
+
+      .pill.good {
+        color: var(--good);
+        border-color: rgba(51, 209, 122, 0.35);
+      }
+
+      .pill.warn {
+        color: var(--warn);
+        border-color: rgba(255, 204, 102, 0.35);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+
+      @media (min-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      pre {
+        overflow: auto;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #f3f6ff;
+      }
+
+      .note {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .hr {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.10);
+        margin: 16px 0 10px;
+      }
+
+      a {
+        color: #a8c7ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Purchase schema model</h1>
+      <div class="sub">
+        This document summarizes the <b>data model</b> for purchasing in this codebase: how a
+        Stripe payment becomes credits, and how credits become daycare applications.
+        <div class="note">
+          Companion doc:
+          <a href="./purchase-logic.html"><span class="k">purchase-logic.html</span></a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>High-level flow</h2>
+        <span class="pill good">Buy = buy credits pack</span>
+        <span class="pill warn">Use = submit auto-apply applications</span>
+        <ul>
+          <li>
+            User pays Stripe for an <span class="k">auto_apply_credits</span> pack (default 30
+            credits).
+          </li>
+          <li>
+            On Stripe success, server grants credits into the user wallet
+            (<span class="k">AutoApplyCredit</span>) and marks the
+            <span class="k">Purchase</span> as completed.
+          </li>
+          <li>
+            When user clicks “Auto-Apply to N Daycares”, server creates one
+            <span class="k">Application</span> per daycare and consumes 1 credit per daycare.
+          </li>
+        </ul>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>User</h2>
+          <ul>
+            <li><span class="k">_id</span>: used as <span class="k">userId</span> string elsewhere</li>
+            <li><span class="k">email</span>: unique</li>
+            <li><span class="k">userType</span>: parent/provider/employer/employee</li>
+            <li>
+              <span class="k">children[]</span>: embedded child profiles
+              <ul>
+                <li><span class="k">name</span>: string (optional)</li>
+                <li><span class="k">age</span>: number (required, 1..18)</li>
+                <li><span class="k">specialNeeds</span>: string (optional)</li>
+              </ul>
+            </li>
+          </ul>
+          <div class="note">
+            Model: <span class="k">backend/src/schemas/UserSchema.js</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Purchase (transaction record)</h2>
+          <ul>
+            <li><span class="k">userId</span>: string user id (from User <span class="k">_id</span>)</li>
+            <li>
+              <span class="k">status</span>: pending/completed/failed/refunded/cancelled
+            </li>
+            <li>
+              <span class="k">paymentType</span>: e.g. <span class="k">auto_apply_credits</span> or
+              <span class="k">report</span>
+            </li>
+            <li>
+              <span class="k">stripePaymentId</span>/<span class="k">paymentIntentId</span>: Stripe
+              PaymentIntent id
+            </li>
+            <li>
+              <span class="k">creditsGranted</span>: credits granted by this purchase (for credits
+              pack purchases)
+            </li>
+            <li>
+              <span class="k">daycareIds[]</span>: array of daycare ids from checkout metadata
+              (informational)
+            </li>
+          </ul>
+          <div class="note">
+            Schema: <span class="k">backend/src/schemas/PurchaseSchema.js</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>AutoApplyCredit (credits wallet)</h2>
+          <ul>
+            <li><span class="k">userId</span>: unique per user (1 wallet per user)</li>
+            <li>
+              <span class="k">totalCredits</span>, <span class="k">usedCredits</span>,
+              <span class="k">remainingCredits</span>
+            </li>
+            <li>
+              <span class="k">grants[]</span>: credit grant history (each entry includes
+              <span class="k">paymentReference</span> = Stripe PaymentIntent id)
+            </li>
+          </ul>
+          <div class="note">
+            Schema: <span class="k">backend/src/schemas/AutoApplyCreditSchema.js</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Application (what got submitted)</h2>
+          <ul>
+            <li><span class="k">userId</span></li>
+            <li><span class="k">daycareId</span>: daycare applied to</li>
+            <li><span class="k">source</span>: <span class="k">auto_apply</span> or <span class="k">manual</span></li>
+            <li>
+              <span class="k">status</span>:
+              pending/viewed/follow_up/responded/accepted/rejected/withdrawn
+            </li>
+          </ul>
+
+          <div class="hr"></div>
+          <h3>Auto-apply child fields (required when <span class="k">source=auto_apply</span>)</h3>
+          <ul>
+            <li><span class="k">childName</span>: string</li>
+            <li><span class="k">childDob</span>: date</li>
+            <li><span class="k">preferredStartDate</span>: date</li>
+            <li><span class="k">specialNotes</span>: string (optional)</li>
+          </ul>
+
+          <div class="note">
+            Schema: <span class="k">backend/src/schemas/ApplicationSchema.js</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Relationships (informal ERD)</h2>
+        <pre>
+User (_id)
+  ├── Purchase.userId (many purchases per user)
+  ├── AutoApplyCredit.userId (one wallet per user)
+  └── Application.userId (many applications per user)
+
+Application.daycareId -> Daycare (_id or Daycare.id)  [not enforced via ref]
+Purchase.daycareIds[] -> daycare ids from checkout metadata (informational)
+        </pre>
+        <div class="note">
+          Relations are by convention using string IDs (no Mongoose <span class="k">ref</span>
+          enforcement in these schemas).
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Counting “daycares bought/used”</h2>
+        <ul>
+          <li>
+            <b>Purchased credits</b>: sum of <span class="k">Purchase.creditsGranted</span> where
+            <span class="k">paymentType=auto_apply_credits</span> and
+            <span class="k">status=completed</span>.
+          </li>
+          <li>
+            <b>Used daycares</b>: count unique <span class="k">Application.daycareId</span> where
+            <span class="k">source=auto_apply</span> for the user.
+          </li>
+          <li>
+            <b>Remaining credits (wallet truth)</b>: <span class="k">AutoApplyCredit.remainingCredits</span>.
+          </li>
+        </ul>
+      </div>
+
+      <div class="note">
+        Generated from the current internal purchase logic documentation. Keep it in sync if schema
+        fields change.
+      </div>
+    </div>
+  </body>
+</html>
+
