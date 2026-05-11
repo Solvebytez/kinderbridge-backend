@@ -462,20 +462,23 @@ class ApplicationController {
         .select("daycareId")
         .lean();
 
-      const existingSet = new Set(existingApplications.map((app) => app.daycareId));
+      const existingSet = new Set(
+        existingApplications.map((app) => String(app.daycareId || "").trim())
+      );
       const eligibleDaycareIds = daycareIds.filter((id) => !existingSet.has(id));
       const skippedDaycareIds = daycareIds.filter((id) => existingSet.has(id));
 
       if (eligibleDaycareIds.length === 0) {
-        return successResponse(
-          {
-            createdCount: 0,
-            skippedCount: skippedDaycareIds.length,
-            createdIds: [],
-            skippedDaycareIds,
-            credits: null,
-          },
-          "All selected daycares already have active applications"
+        return errorResponse(
+          "All selected daycares already have a pending or accepted application. Choose different daycares or wait until an application is rejected or withdrawn before re-applying.",
+          400,
+          [
+            {
+              code: "ALL_DAYCARES_ALREADY_APPLIED",
+              skippedDaycareIds,
+              skippedCount: skippedDaycareIds.length,
+            },
+          ]
         );
       }
 
@@ -551,6 +554,11 @@ class ApplicationController {
         throw createError;
       }
 
+      const successMessage =
+        skippedDaycareIds.length > 0
+          ? `Submitted ${created.length} application(s). ${skippedDaycareIds.length} daycare(s) were skipped — you already have a pending or accepted application there.`
+          : "Auto-apply applications submitted successfully";
+
       return successResponse(
         {
           createdCount: created.length,
@@ -563,7 +571,7 @@ class ApplicationController {
             remainingCredits: Number(consumedWallet.remainingCredits || 0),
           },
         },
-        "Auto-apply applications submitted successfully"
+        successMessage
       );
     } catch (error) {
       console.error("Error submitting auto-apply applications:", error);
