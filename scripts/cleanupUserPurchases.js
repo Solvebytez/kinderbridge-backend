@@ -1,9 +1,15 @@
 /* eslint-disable no-console */
 /**
- * Deletes all purchase records for a user email and resets their auto-apply credits wallet.
+ * Deletes ALL Purchase rows for a user email and removes their AutoApplyCredit wallet.
+ *
+ * Optional: also delete auto-apply Application rows (recommended for a full "daycare pack" reset).
  *
  * Usage (from backend folder):
- *   node scripts/cleanupUserPurchases.js sahinh013@gmail.com
+ *   node scripts/cleanupUserPurchases.js user@example.com
+ *   node scripts/cleanupUserPurchases.js user@example.com --with-auto-apply-applications
+ *
+ * Note: cleanupUserPurchasesOnly.js removes ONLY Purchase docs — wallet + applications remain.
+ * For a broader reset (filtered purchases + apps), see resetUserAutoApplyState.js
  *
  * Requires backend/.env with MONGODB_URI.
  */
@@ -17,12 +23,20 @@ dotenv.config({ path: path.resolve(__dirname, "..", "config.env") });
 const User = require("../src/schemas/UserSchema");
 const Purchase = require("../src/schemas/PurchaseSchema");
 const AutoApplyCredit = require("../src/schemas/AutoApplyCreditSchema");
+const Application = require("../src/schemas/ApplicationSchema");
+
+function hasFlag(name) {
+  return process.argv.slice(3).includes(name);
+}
 
 async function main() {
   const emailArg = process.argv[2];
   const email = String(emailArg || "").trim().toLowerCase();
+  const withAutoApplyApps = hasFlag("--with-auto-apply-applications");
   if (!email) {
-    console.error("Email is required. Example: node scripts/cleanupUserPurchases.js user@example.com");
+    console.error(
+      "Email is required. Example: node scripts/cleanupUserPurchases.js user@example.com [--with-auto-apply-applications]"
+    );
     process.exit(1);
   }
 
@@ -47,9 +61,15 @@ async function main() {
 
   const beforePurchases = await Purchase.countDocuments({ userId });
   const beforeWallet = await AutoApplyCredit.findOne({ userId }).lean();
+  const beforeAutoApplyApps = withAutoApplyApps
+    ? await Application.countDocuments({ userId, source: "auto_apply" })
+    : 0;
 
   const purchaseDelete = await Purchase.deleteMany({ userId });
   const walletDelete = await AutoApplyCredit.deleteOne({ userId });
+  const appsDelete = withAutoApplyApps
+    ? await Application.deleteMany({ userId, source: "auto_apply" })
+    : { deletedCount: 0 };
 
   console.log("Purchases deleted:", {
     before: beforePurchases,
@@ -59,6 +79,16 @@ async function main() {
     existed: !!beforeWallet,
     deletedCount: walletDelete.deletedCount,
   });
+  if (withAutoApplyApps) {
+    console.log("Auto-apply applications deleted:", {
+      before: beforeAutoApplyApps,
+      deletedCount: appsDelete.deletedCount,
+    });
+  } else {
+    console.log(
+      "Auto-apply applications: skipped (pass --with-auto-apply-applications to remove source=auto_apply rows)."
+    );
+  }
 
   await mongoose.disconnect();
 }

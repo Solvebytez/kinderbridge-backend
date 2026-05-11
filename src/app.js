@@ -12,7 +12,41 @@ require("dotenv").config({ path: path.join(__dirname, "../config.env") });
 
 const app = express();
 
-// Enhanced security middleware for production
+function parseOriginList(raw) {
+  return String(raw || "")
+    .split(/[\s,]+/)
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+// Extra browser origins (comma- or space-separated), e.g. preview deploy URLs
+const additionalCorsOrigins = parseOriginList(process.env.ADDITIONAL_CORS_ORIGINS);
+// Multiple staging / Vercel URLs in one env (e.g. new project + branch previews)
+const frontendStagingUrls = parseOriginList(process.env.FRONTEND_STAGING_URLS);
+
+// CORS configuration (supports both development and production)
+const allowedOrigins = [
+  "https://www.kinderbridge.ca",
+  "https://kinderbridge.ca", // Also allow without www
+  "https://api.kinderbridge.ca", // API subdomain
+  "https://day-care-app.onrender.com",
+  "https://day-care-app-1.onrender.com", // Current Render URL
+  "https://daycare-staging.vercel.app", // Vercel staging SPA (cookie + credentialed CORS)
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_STAGING_URL,
+  process.env.FRONTEND_DEV_URL || "http://localhost:3000",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  ...frontendStagingUrls,
+  ...additionalCorsOrigins,
+];
+const uniqueAllowedOrigins = [...new Set(allowedOrigins.filter(Boolean))];
+
+const uniqueCspConnectSrc = [
+  ...new Set(["'self'", ...uniqueAllowedOrigins].filter(Boolean)),
+];
+
+// Enhanced security middleware for production (after CORS origin list so connectSrc stays in sync)
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -21,12 +55,7 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https:"],
         scriptSrc: ["'self'"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: [
-          "'self'",
-          "https://day-care-app.onrender.com",
-          "https://www.kinderbridge.ca",
-          "https://kinderbridge.ca",
-        ],
+        connectSrc: uniqueCspConnectSrc,
         fontSrc: ["'self'", "https:", "data:"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
@@ -41,19 +70,6 @@ app.use(
   })
 );
 
-// CORS configuration (supports both development and production)
-const allowedOrigins = [
-  "https://www.kinderbridge.ca",
-  "https://kinderbridge.ca", // Also allow without www
-  "https://api.kinderbridge.ca", // API subdomain
-  "https://day-care-app.onrender.com",
-  "https://day-care-app-1.onrender.com", // Current Render URL
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_DEV_URL || "http://localhost:3000",
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-].filter(Boolean);
-
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -61,7 +77,7 @@ app.use(
       if (!origin) return callback(null, true);
 
       if (
-        allowedOrigins.includes(origin) ||
+        uniqueAllowedOrigins.includes(origin) ||
         process.env.NODE_ENV !== "production"
       ) {
         callback(null, true);

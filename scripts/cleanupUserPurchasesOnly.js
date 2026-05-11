@@ -1,9 +1,14 @@
 /* eslint-disable no-console */
 /**
- * Deletes ONLY purchase records for a user email.
+ * Deletes ONLY Purchase collection rows for a user email.
+ *
+ * Does NOT remove: AutoApplyCredit wallet, Application (auto_apply), or Stripe-side data.
+ * For purchases + wallet: node scripts/cleanupUserPurchases.js <email>
+ * For purchases + wallet + auto_apply apps: node scripts/cleanupUserPurchases.js <email> --with-auto-apply-applications
+ * Alternative: node scripts/resetUserAutoApplyState.js <email>
  *
  * Usage (from backend folder):
- *   node scripts/cleanupUserPurchasesOnly.js sahinh013@gmail.com
+ *   node scripts/cleanupUserPurchasesOnly.js user@example.com
  *
  * Reads DB connection from backend/.env (MONGODB_URI, optional DB_NAME).
  */

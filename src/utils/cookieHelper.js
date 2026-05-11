@@ -44,20 +44,26 @@ const setAccessTokenCookie = (res, token) => {
     tokenLength: token.length
   });
   
-  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  // Cross-site SPAs (e.g. *.vercel.app → api.kinderbridge.ca) require SameSite=None + Secure.
+  // Override with COOKIE_SAMESITE=lax if you intentionally do not use cross-origin frontends.
+  const cookieSameSite = (
+    process.env.COOKIE_SAMESITE || (isProduction ? "none" : "lax")
+  ).toLowerCase();
   const cookieSecure =
-    typeof process.env.COOKIE_SECURE === 'string'
-      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
-      : isProduction;
+    typeof process.env.COOKIE_SECURE === "string"
+      ? process.env.COOKIE_SECURE.toLowerCase() === "true"
+      : isProduction || cookieSameSite === "none";
   const cookieDomain =
-    typeof process.env.COOKIE_DOMAIN === 'string'
-      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
-      : (isProduction ? '.kinderbridge.ca' : undefined);
+    typeof process.env.COOKIE_DOMAIN === "string"
+      ? process.env.COOKIE_DOMAIN.trim() || undefined
+      : isProduction
+        ? ".kinderbridge.ca"
+        : undefined;
 
   const cookieOptions = {
     httpOnly: true,
     secure: cookieSecure, // NOTE: SameSite=None requires Secure
-    sameSite: cookieSameSite, // 'none' for localhost -> prod API cookie auth
+    sameSite: cookieSameSite, // production default 'none' for cross-site SPAs (e.g. Vercel → API)
     maxAge: maxAge,
     path: '/',
     // Set to share cookies across subdomains, or leave undefined for host-only cookies.
@@ -81,15 +87,19 @@ const setRefreshTokenCookie = (res, token) => {
   const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
   const maxAge = parseExpiryToMs(expiresIn);
 
-  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  const cookieSameSite = (
+    process.env.COOKIE_SAMESITE || (isProduction ? "none" : "lax")
+  ).toLowerCase();
   const cookieSecure =
-    typeof process.env.COOKIE_SECURE === 'string'
-      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
-      : isProduction;
+    typeof process.env.COOKIE_SECURE === "string"
+      ? process.env.COOKIE_SECURE.toLowerCase() === "true"
+      : isProduction || cookieSameSite === "none";
   const cookieDomain =
-    typeof process.env.COOKIE_DOMAIN === 'string'
-      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
-      : (isProduction ? '.kinderbridge.ca' : undefined);
+    typeof process.env.COOKIE_DOMAIN === "string"
+      ? process.env.COOKIE_DOMAIN.trim() || undefined
+      : isProduction
+        ? ".kinderbridge.ca"
+        : undefined;
 
   res.cookie('refreshToken', token, {
     httpOnly: true,
@@ -108,16 +118,20 @@ const setRefreshTokenCookie = (res, token) => {
 const clearAuthCookies = (res) => {
   const isProduction = process.env.NODE_ENV === 'production';
 
-  const cookieSameSite = (process.env.COOKIE_SAMESITE || (isProduction ? 'lax' : 'lax')).toLowerCase();
+  const cookieSameSite = (
+    process.env.COOKIE_SAMESITE || (isProduction ? "none" : "lax")
+  ).toLowerCase();
   const cookieSecure =
-    typeof process.env.COOKIE_SECURE === 'string'
-      ? process.env.COOKIE_SECURE.toLowerCase() === 'true'
-      : isProduction;
+    typeof process.env.COOKIE_SECURE === "string"
+      ? process.env.COOKIE_SECURE.toLowerCase() === "true"
+      : isProduction || cookieSameSite === "none";
   const cookieDomain =
-    typeof process.env.COOKIE_DOMAIN === 'string'
-      ? (process.env.COOKIE_DOMAIN.trim() || undefined)
-      : (isProduction ? '.kinderbridge.ca' : undefined);
-  
+    typeof process.env.COOKIE_DOMAIN === "string"
+      ? process.env.COOKIE_DOMAIN.trim() || undefined
+      : isProduction
+        ? ".kinderbridge.ca"
+        : undefined;
+
   res.clearCookie('accessToken', {
     httpOnly: true,
     secure: cookieSecure,
