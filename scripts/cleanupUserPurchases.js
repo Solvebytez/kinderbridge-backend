@@ -7,6 +7,7 @@
  * Usage (from backend folder):
  *   node scripts/cleanupUserPurchases.js user@example.com
  *   node scripts/cleanupUserPurchases.js user@example.com --with-auto-apply-applications
+ *     (also removes enrollment submissions for that user)
  *
  * Note: cleanupUserPurchasesOnly.js removes ONLY Purchase docs — wallet + applications remain.
  * For a broader reset (filtered purchases + apps), see resetUserAutoApplyState.js
@@ -24,6 +25,7 @@ const User = require("../src/schemas/UserSchema");
 const Purchase = require("../src/schemas/PurchaseSchema");
 const AutoApplyCredit = require("../src/schemas/AutoApplyCreditSchema");
 const Application = require("../src/schemas/ApplicationSchema");
+const EnrollmentSubmission = require("../src/schemas/EnrollmentSubmissionSchema");
 
 function hasFlag(name) {
   return process.argv.slice(3).includes(name);
@@ -64,11 +66,17 @@ async function main() {
   const beforeAutoApplyApps = withAutoApplyApps
     ? await Application.countDocuments({ userId, source: "auto_apply" })
     : 0;
+  const beforeEnrollments = withAutoApplyApps
+    ? await EnrollmentSubmission.countDocuments({ userId })
+    : 0;
 
   const purchaseDelete = await Purchase.deleteMany({ userId });
   const walletDelete = await AutoApplyCredit.deleteOne({ userId });
   const appsDelete = withAutoApplyApps
     ? await Application.deleteMany({ userId, source: "auto_apply" })
+    : { deletedCount: 0 };
+  const enrollmentsDelete = withAutoApplyApps
+    ? await EnrollmentSubmission.deleteMany({ userId })
     : { deletedCount: 0 };
 
   console.log("Purchases deleted:", {
@@ -84,9 +92,13 @@ async function main() {
       before: beforeAutoApplyApps,
       deletedCount: appsDelete.deletedCount,
     });
+    console.log("Enrollment submissions deleted:", {
+      before: beforeEnrollments,
+      deletedCount: enrollmentsDelete.deletedCount,
+    });
   } else {
     console.log(
-      "Auto-apply applications: skipped (pass --with-auto-apply-applications to remove source=auto_apply rows)."
+      "Auto-apply applications + enrollments: skipped (pass --with-auto-apply-applications)."
     );
   }
 
