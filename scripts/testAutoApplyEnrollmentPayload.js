@@ -142,13 +142,25 @@ async function main() {
   const controller = new ApplicationController({});
 
   if (grantCredits) {
-    console.log("Granting 30 test credits...");
-    const grantRes = await controller.grantAutoApplyCredits(userId, {
-      credits: 30,
-      paymentReference: "test-script-grant",
-      note: "testAutoApplyEnrollmentPayload.js",
-    });
-    console.log("Grant result:", grantRes.statusCode, grantRes.body?.success);
+    const wallet = await AutoApplyCredit.findOne({ userId }).lean();
+    if ((wallet?.remainingCredits ?? 0) > 0) {
+      console.log(
+        "Skipping grant — wallet already has",
+        wallet.remainingCredits,
+        "remaining credits."
+      );
+    } else {
+      console.log("Granting 30 test credits...");
+      const grantRes = await controller.grantAutoApplyCredits(userId, {
+        credits: 30,
+        paymentReference: `test-script-grant-${Date.now()}`,
+        note: "testAutoApplyEnrollmentPayload.js",
+      });
+      console.log("Grant result:", grantRes.statusCode, grantRes.body?.success);
+      if (!grantRes.body?.success) {
+        console.warn("Grant failed; submit may fail if you have 0 credits.");
+      }
+    }
   }
 
   let daycareId = daycareIdArg;

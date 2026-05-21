@@ -397,7 +397,11 @@ class ApplicationController {
         },
         { upsert: true, returnDocument: "after" }
       );
-      const wallet = walletResult?.value;
+      // Driver may return doc directly or as { value } depending on MongoDB driver version
+      const wallet = walletResult?.value ?? walletResult;
+      if (!wallet) {
+        return internalErrorResponse("Failed to load wallet after granting credits");
+      }
 
       const response = successResponse(
         {
