@@ -554,6 +554,19 @@ class ApplicationController {
         throw createError;
       }
 
+      try {
+        const EnrollmentController = require("./enrollmentController");
+        const enrollmentController = new EnrollmentController(this.db);
+        for (const app of created) {
+          await enrollmentController.ensureDraftForApplication(userId, app);
+        }
+      } catch (enrollmentError) {
+        console.error(
+          "Warning: auto-apply succeeded but enrollment draft creation failed:",
+          enrollmentError
+        );
+      }
+
       const successMessage =
         skippedDaycareIds.length > 0
           ? `Submitted ${created.length} application(s). ${skippedDaycareIds.length} daycare(s) were skipped — you already have a pending or accepted application there.`

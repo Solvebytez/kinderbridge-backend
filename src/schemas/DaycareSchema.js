@@ -116,6 +116,13 @@ const daycareSchema = new mongoose.Schema(
       default: "NO",
       trim: true,
     },
+    /** Optional n8n / external registration form config */
+    enrollmentForm: {
+      formId: { type: String, default: "", trim: true },
+      formUrl: { type: String, default: "", trim: true },
+      serviceName: { type: String, default: "", trim: true },
+      active: { type: Boolean, default: false },
+    },
     rating: {
       type: Number,
       default: 0,

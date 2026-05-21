@@ -184,6 +184,7 @@ try {
   const contactLogRoutes = require("./routes/contactLogs");
   const paymentsRoutes = require("./routes/payments");
   const reportsRoutes = require("./routes/reports");
+  const enrollmentRoutes = require("./routes/enrollments");
 
   app.use("/api/daycares", daycareRoutes);
   app.use("/api/messages", messageRoutes);
@@ -192,6 +193,7 @@ try {
   app.use("/api/contact-logs", contactLogRoutes);
   app.use("/api/payments", paymentsRoutes.router);
   app.use("/api/reports", reportsRoutes);
+  app.use("/api/enrollments", enrollmentRoutes);
   console.log("✅ Core routes loaded successfully");
 } catch (error) {
   console.error("❌ Failed to load core routes:", error.message);
