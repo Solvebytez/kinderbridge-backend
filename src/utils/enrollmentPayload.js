@@ -53,7 +53,7 @@ function buildFormMetadata(daycare) {
     service_name: serviceName,
     form_url: formUrl,
     submission_date: null,
-    preferred_language: "English",
+    preferred_language: "",
   };
 }
 
@@ -74,13 +74,13 @@ function createEmptyPayload(formMetadata) {
       relationship: "",
       email: "",
       phone: "",
-      phone_type: "Mobile",
+      phone_type: "",
       address: {
         street: "",
         city: "",
         province: "",
         postal_code: "",
-        country: "Canada",
+        country: "",
       },
       employment: {
         employment_status: "",
@@ -153,13 +153,7 @@ function prefillPayloadFromApplication(application, daycare) {
     application?.specialNotes || application?.additionalNotes || ""
   ).trim();
 
-  if (daycare?.city) {
-    payload.primary_parent.address.city = String(daycare.city).trim();
-  }
-  // Daycare.region is a geographic region name (search filter), not province — do not map to address.province.
-  if (daycare?.address && daycare.address !== "NO") {
-    payload.primary_parent.address.street = String(daycare.address).trim();
-  }
+  // Parent address comes only from enrollment form / checkout optional fields — never daycare location.
 
   return payload;
 }
