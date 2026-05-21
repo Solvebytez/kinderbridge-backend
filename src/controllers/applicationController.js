@@ -557,8 +557,23 @@ class ApplicationController {
       try {
         const EnrollmentController = require("./enrollmentController");
         const enrollmentController = new EnrollmentController(this.db);
+        const enrollmentPartial =
+          payload?.enrollmentPayload &&
+          typeof payload.enrollmentPayload === "object"
+            ? payload.enrollmentPayload
+            : null;
         for (const app of created) {
-          await enrollmentController.ensureDraftForApplication(userId, app);
+          const draft = await enrollmentController.ensureDraftForApplication(
+            userId,
+            app
+          );
+          if (enrollmentPartial && draft?._id) {
+            await enrollmentController.patchPayload(
+              userId,
+              String(draft._id),
+              enrollmentPartial
+            );
+          }
         }
       } catch (enrollmentError) {
         console.error(
