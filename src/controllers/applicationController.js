@@ -558,26 +558,58 @@ class ApplicationController {
         throw createError;
       }
 
+      let enrollmentWarnings = [];
       try {
         const EnrollmentController = require("./enrollmentController");
         const enrollmentController = new EnrollmentController(this.db);
         const enrollmentPartial =
           payload?.enrollmentPayload &&
-          typeof payload.enrollmentPayload === "object"
+          typeof payload.enrollmentPayload === "object" &&
+          !Array.isArray(payload.enrollmentPayload)
             ? payload.enrollmentPayload
             : null;
         for (const app of created) {
+          const applicationId = String(app._id || "");
           const draft = await enrollmentController.ensureDraftForApplication(
             userId,
             app
           );
-          if (enrollmentPartial && draft?._id) {
-            await enrollmentController.patchPayload(
-              userId,
-              String(draft._id),
-              enrollmentPartial
+          if (!draft?._id) {
+            enrollmentWarnings.push({
+              applicationId,
+              error: "Enrollment draft was not created",
+            });
+            continue;
+          }
+          if (!enrollmentPartial) continue;
+
+          const patchResult = await enrollmentController.patchPayload(
+            userId,
+            String(draft._id),
+            enrollmentPartial
+          );
+          if (patchResult.statusCode < 200 || patchResult.statusCode >= 300) {
+            enrollmentWarnings.push({
+              applicationId,
+              enrollmentId: String(draft._id),
+              error:
+                patchResult.body?.error ||
+                patchResult.body?.message ||
+                "Enrollment patch failed",
+            });
+            console.error(
+              "Enrollment patch failed after auto-apply:",
+              applicationId,
+              patchResult.statusCode,
+              patchResult.body
             );
           }
+        }
+        if (enrollmentWarnings.length > 0) {
+          console.warn(
+            "auto-apply: applications created but some enrollment merges failed:",
+            enrollmentWarnings
+          );
         }
       } catch (enrollmentError) {
         console.error(
@@ -591,20 +623,30 @@ class ApplicationController {
           ? `Submitted ${created.length} application(s). ${skippedDaycareIds.length} daycare(s) were skipped — you already have a pending or accepted application there.`
           : "Auto-apply applications submitted successfully";
 
-      return successResponse(
-        {
-          createdCount: created.length,
-          skippedCount: skippedDaycareIds.length,
-          createdIds: created.map((item) => item._id),
-          skippedDaycareIds,
-          credits: {
-            totalCredits: Number(consumedWallet.totalCredits || 0),
-            usedCredits: Number(consumedWallet.usedCredits || 0),
-            remainingCredits: Number(consumedWallet.remainingCredits || 0),
-          },
+      const responseData = {
+        createdCount: created.length,
+        skippedCount: skippedDaycareIds.length,
+        createdIds: created.map((item) => item._id),
+        skippedDaycareIds,
+        credits: {
+          totalCredits: Number(
+            consumedWallet?.totalCredits ?? consumedWallet?.value?.totalCredits ?? 0
+          ),
+          usedCredits: Number(
+            consumedWallet?.usedCredits ?? consumedWallet?.value?.usedCredits ?? 0
+          ),
+          remainingCredits: Number(
+            consumedWallet?.remainingCredits ??
+              consumedWallet?.value?.remainingCredits ??
+              0
+          ),
         },
-        successMessage
-      );
+      };
+      if (enrollmentWarnings.length > 0) {
+        responseData.enrollmentWarnings = enrollmentWarnings;
+      }
+
+      return successResponse(responseData, successMessage);
     } catch (error) {
       console.error("Error submitting auto-apply applications:", error);
       return internalErrorResponse(error.message);
