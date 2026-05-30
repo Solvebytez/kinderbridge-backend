@@ -36,6 +36,12 @@ const enrollmentSubmissionSchema = new mongoose.Schema(
       default: "20260521_v1",
       trim: true,
     },
+    enrollmentFormQueueId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
     payload: {
       type: mongoose.Schema.Types.Mixed,
       required: true,

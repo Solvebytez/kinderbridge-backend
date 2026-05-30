@@ -17,6 +17,14 @@ const {
   normalizeRegion,
   looksLikeProvinceCode,
 } = require("../utils/enrollmentPayload");
+const {
+  syncEnrollmentToFormQueue,
+  queueDocumentToPayload,
+  automationStatusFromQueueStatus,
+  loadQueueById,
+  loadQueuesByIds,
+} = require("../utils/enrollmentFormQueueSync");
+const EnrollmentFormQueue = require("../schemas/EnrollmentFormQueueSchema");
 
 function getDaycareModel() {
   const mongoose = require("mongoose");
@@ -28,22 +36,51 @@ function getDaycareModel() {
   }
 }
 
-function toPublicEnrollment(doc) {
+function toPublicEnrollment(doc, queueLean = null) {
   if (!doc) return null;
   const o = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  let payload = o.payload;
+  let automationStatus = o.automationStatus;
+  let formQueue = null;
+
+  if (queueLean) {
+    formQueue = {
+      ...queueLean,
+      _id: queueLean._id?.toString?.() || queueLean._id,
+    };
+    const fromQueue = queueDocumentToPayload(queueLean);
+    if (fromQueue) {
+      payload = fromQueue;
+    }
+    const mappedAutomation = automationStatusFromQueueStatus(queueLean.status);
+    if (mappedAutomation) {
+      automationStatus = mappedAutomation;
+    }
+  }
+
   return {
     _id: o._id?.toString?.() || o._id,
     applicationId: o.applicationId,
     userId: o.userId,
     daycareId: o.daycareId,
     schemaVersion: o.schemaVersion,
-    payload: o.payload,
+    enrollmentFormQueueId: o.enrollmentFormQueueId || null,
+    payload,
+    formQueue,
     completionStatus: o.completionStatus,
-    automationStatus: o.automationStatus,
+    automationStatus,
     n8n: o.n8n || {},
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
   };
+}
+
+async function publicEnrollmentWithQueue(doc) {
+  const lean = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  const queueLean = lean.enrollmentFormQueueId
+    ? await loadQueueById(lean.enrollmentFormQueueId)
+    : null;
+  return toPublicEnrollment(lean, queueLean);
 }
 
 class EnrollmentController {
@@ -148,7 +185,14 @@ class EnrollmentController {
       automationStatus: "not_ready",
     });
 
-    return created.toObject();
+    try {
+      await syncEnrollmentToFormQueue(created);
+    } catch (syncErr) {
+      console.error("enrollment_form_queue sync failed (create):", syncErr);
+    }
+
+    const refreshed = await EnrollmentSubmission.findById(created._id).lean();
+    return refreshed || created.toObject();
   }
 
   async getByApplicationId(userId, applicationId) {
@@ -160,14 +204,29 @@ class EnrollmentController {
     if (!doc) {
       return notFoundResponse("Enrollment submission not found");
     }
-    return successResponse(toPublicEnrollment(doc));
+    const queueLean = doc.enrollmentFormQueueId
+      ? await loadQueueById(doc.enrollmentFormQueueId)
+      : null;
+    return successResponse(toPublicEnrollment(doc, queueLean));
   }
 
   async listMine(userId) {
     const docs = await EnrollmentSubmission.find({ userId: String(userId) })
       .sort({ updatedAt: -1 })
       .lean();
-    return successResponse(docs.map(toPublicEnrollment));
+    const queueMap = await loadQueuesByIds(
+      docs.map((d) => d.enrollmentFormQueueId)
+    );
+    return successResponse(
+      docs.map((d) =>
+        toPublicEnrollment(
+          d,
+          d.enrollmentFormQueueId
+            ? queueMap.get(String(d.enrollmentFormQueueId))
+            : null
+        )
+      )
+    );
   }
 
   async patchPayload(userId, enrollmentId, partialPayload) {
@@ -194,7 +253,17 @@ class EnrollmentController {
     doc.schemaVersion = SCHEMA_VERSION;
     await doc.save();
 
-    return successResponse(toPublicEnrollment(doc));
+    try {
+      await syncEnrollmentToFormQueue(doc);
+    } catch (syncErr) {
+      console.error("enrollment_form_queue sync failed (patch):", syncErr);
+    }
+
+    const refreshed = await EnrollmentSubmission.findById(doc._id).lean();
+    const queueLean = refreshed?.enrollmentFormQueueId
+      ? await loadQueueById(refreshed.enrollmentFormQueueId)
+      : null;
+    return successResponse(toPublicEnrollment(refreshed || doc, queueLean));
   }
 
   async validate(userId, enrollmentId) {
@@ -220,7 +289,7 @@ class EnrollmentController {
     }
     if (doc.automationStatus === "queued" || doc.automationStatus === "running") {
       return successResponse(
-        toPublicEnrollment(doc),
+        await publicEnrollmentWithQueue(doc),
         "Automation already queued"
       );
     }
@@ -242,10 +311,20 @@ class EnrollmentController {
     }
     await doc.save();
 
+    try {
+      await syncEnrollmentToFormQueue(doc);
+    } catch (syncErr) {
+      console.error("enrollment_form_queue sync failed (queue):", syncErr);
+    }
+
     await this.notifyN8nWebhook(doc);
 
+    const refreshed = await EnrollmentSubmission.findById(doc._id).lean();
+    const queueLean = refreshed?.enrollmentFormQueueId
+      ? await loadQueueById(refreshed.enrollmentFormQueueId)
+      : null;
     return successResponse(
-      toPublicEnrollment(doc),
+      toPublicEnrollment(refreshed || doc, queueLean),
       "Queued for daycare form automation"
     );
   }
@@ -261,8 +340,13 @@ class EnrollmentController {
     }
 
     try {
+      const queueId = doc.enrollmentFormQueueId
+        ? String(doc.enrollmentFormQueueId)
+        : await syncEnrollmentToFormQueue(doc);
+
       const body = {
         enrollmentId: doc._id?.toString(),
+        enrollmentFormQueueId: queueId || null,
         applicationId: doc.applicationId,
         userId: doc.userId,
         daycareId: doc.daycareId,
@@ -289,7 +373,55 @@ class EnrollmentController {
   async n8nGetPayload(enrollmentId) {
     const doc = await EnrollmentSubmission.findById(enrollmentId).lean();
     if (!doc) return notFoundResponse("Enrollment submission not found");
-    return successResponse(toPublicEnrollment(doc));
+    const queueLean = doc.enrollmentFormQueueId
+      ? await loadQueueById(doc.enrollmentFormQueueId)
+      : null;
+    return successResponse(toPublicEnrollment(doc, queueLean));
+  }
+
+  async n8nGetFormQueue(queueId) {
+    const id = String(queueId || "").trim();
+    if (!id) return errorResponse("id is required", 400);
+
+    let queueDoc = await EnrollmentFormQueue.findById(id).lean();
+    let enrollmentMeta = null;
+
+    if (!queueDoc) {
+      const submission = await EnrollmentSubmission.findById(id).lean();
+      if (submission?.enrollmentFormQueueId) {
+        enrollmentMeta = {
+          enrollmentId: submission._id?.toString(),
+          applicationId: submission.applicationId,
+          userId: submission.userId,
+          daycareId: submission.daycareId,
+        };
+        queueDoc = await EnrollmentFormQueue.findById(
+          submission.enrollmentFormQueueId
+        ).lean();
+      }
+    } else {
+      const submission = await EnrollmentSubmission.findOne({
+        enrollmentFormQueueId: id,
+      }).lean();
+      if (submission) {
+        enrollmentMeta = {
+          enrollmentId: submission._id?.toString(),
+          applicationId: submission.applicationId,
+          userId: submission.userId,
+          daycareId: submission.daycareId,
+        };
+      }
+    }
+
+    if (!queueDoc) {
+      return notFoundResponse("Enrollment form queue record not found");
+    }
+
+    return successResponse({
+      ...queueDoc,
+      _id: queueDoc._id?.toString(),
+      enrollment: enrollmentMeta,
+    });
   }
 
   async n8nCallback(body) {
@@ -319,7 +451,15 @@ class EnrollmentController {
           submissionDate || new Date().toISOString();
       }
       await doc.save();
-      return successResponse(toPublicEnrollment(doc), "Marked as submitted");
+      try {
+        await syncEnrollmentToFormQueue(doc);
+      } catch (syncErr) {
+        console.error("enrollment_form_queue sync failed (callback submitted):", syncErr);
+      }
+      return successResponse(
+        await publicEnrollmentWithQueue(doc),
+        "Marked as submitted"
+      );
     }
 
     if (status === "failed" || status === "error") {
@@ -329,13 +469,26 @@ class EnrollmentController {
         doc.payload.status = "failed";
       }
       await doc.save();
-      return successResponse(toPublicEnrollment(doc), "Marked as failed");
+      try {
+        await syncEnrollmentToFormQueue(doc);
+      } catch (syncErr) {
+        console.error("enrollment_form_queue sync failed (callback failed):", syncErr);
+      }
+      return successResponse(
+        await publicEnrollmentWithQueue(doc),
+        "Marked as failed"
+      );
     }
 
     if (status === "running") {
       doc.automationStatus = "running";
       await doc.save();
-      return successResponse(toPublicEnrollment(doc));
+      try {
+        await syncEnrollmentToFormQueue(doc);
+      } catch (syncErr) {
+        console.error("enrollment_form_queue sync failed (callback running):", syncErr);
+      }
+      return successResponse(await publicEnrollmentWithQueue(doc));
     }
 
     return errorResponse(

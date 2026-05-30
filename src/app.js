@@ -194,6 +194,8 @@ try {
   app.use("/api/payments", paymentsRoutes.router);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/enrollments", enrollmentRoutes);
+  const enrollmentQueueRoutes = require("./routes/enrollmentQueue");
+  app.use("/api/enrollment-queue", enrollmentQueueRoutes);
   console.log("✅ Core routes loaded successfully");
 } catch (error) {
   console.error("❌ Failed to load core routes:", error.message);

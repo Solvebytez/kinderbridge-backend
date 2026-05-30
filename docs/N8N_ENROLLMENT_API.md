@@ -32,6 +32,18 @@ Response: `daycareId`, `form_metadata` (`form_id`, `form_url`, `service_name`), 
 
 Returns full enrollment document including `payload` (n8n JSON schema).
 
+## Get form queue (preferred for n8n)
+
+`GET /api/enrollment-queue/:id`
+
+Auth: `X-N8N-API-Key` or `Authorization: Bearer <N8N_API_KEY>`
+
+`:id` may be **`enrollment_form_queue._id`** or **`enrollmentsubmissions._id`** (resolves via `enrollmentFormQueueId`).
+
+Response: full queue document (form at root) plus optional `enrollment` meta `{ enrollmentId, applicationId, userId, daycareId }`.
+
+Webhook payload also includes `enrollmentFormQueueId` when synced.
+
 ## Callback
 
 `POST /api/enrollments/n8n/callback`

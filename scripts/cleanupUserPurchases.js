@@ -26,6 +26,7 @@ const Purchase = require("../src/schemas/PurchaseSchema");
 const AutoApplyCredit = require("../src/schemas/AutoApplyCreditSchema");
 const Application = require("../src/schemas/ApplicationSchema");
 const EnrollmentSubmission = require("../src/schemas/EnrollmentSubmissionSchema");
+const EnrollmentFormQueue = require("../src/schemas/EnrollmentFormQueueSchema");
 
 function hasFlag(name) {
   return process.argv.slice(3).includes(name);
@@ -70,6 +71,16 @@ async function main() {
     ? await EnrollmentSubmission.countDocuments({ userId })
     : 0;
 
+  let queueIdsToDelete = [];
+  if (withAutoApplyApps) {
+    const subs = await EnrollmentSubmission.find({ userId })
+      .select("enrollmentFormQueueId")
+      .lean();
+    queueIdsToDelete = subs
+      .map((s) => String(s.enrollmentFormQueueId || "").trim())
+      .filter(Boolean);
+  }
+
   const purchaseDelete = await Purchase.deleteMany({ userId });
   const walletDelete = await AutoApplyCredit.deleteOne({ userId });
   const appsDelete = withAutoApplyApps
@@ -78,6 +89,12 @@ async function main() {
   const enrollmentsDelete = withAutoApplyApps
     ? await EnrollmentSubmission.deleteMany({ userId })
     : { deletedCount: 0 };
+  const queueDelete =
+    withAutoApplyApps && queueIdsToDelete.length > 0
+      ? await EnrollmentFormQueue.deleteMany({
+          _id: { $in: queueIdsToDelete },
+        })
+      : { deletedCount: 0 };
 
   console.log("Purchases deleted:", {
     before: beforePurchases,
@@ -95,6 +112,10 @@ async function main() {
     console.log("Enrollment submissions deleted:", {
       before: beforeEnrollments,
       deletedCount: enrollmentsDelete.deletedCount,
+    });
+    console.log("Enrollment form queue deleted:", {
+      linkedIds: queueIdsToDelete.length,
+      deletedCount: queueDelete.deletedCount,
     });
   } else {
     console.log(

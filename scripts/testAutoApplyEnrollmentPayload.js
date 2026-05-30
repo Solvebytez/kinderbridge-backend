@@ -8,7 +8,7 @@
  *   node scripts/testAutoApplyEnrollmentPayload.js sahinh013@gmail.com --daycare-id 6977928e2e40cca8d4f82429
  *   node scripts/testAutoApplyEnrollmentPayload.js sahinh013@gmail.com --grant-credits
  *
- * Then verify DB:
+ * Then verify DB + queue sync:
  *   node scripts/inspectUserData.js sahinh013@gmail.com --limit 1
  *
  * Requires MONGODB_URI in backend/.env and at least 1 auto-apply credit
@@ -26,6 +26,7 @@ const Application = require("../src/schemas/ApplicationSchema");
 const Daycare = require("../src/schemas/DaycareSchema");
 const AutoApplyCredit = require("../src/schemas/AutoApplyCreditSchema");
 const EnrollmentSubmission = require("../src/schemas/EnrollmentSubmissionSchema");
+const EnrollmentFormQueue = require("../src/schemas/EnrollmentFormQueueSchema");
 const ApplicationController = require("../src/controllers/applicationController");
 
 /** Sample payload matching frontend buildEnrollmentPayloadFromAutoApply shape */
@@ -270,6 +271,55 @@ async function main() {
     });
     console.log("\nFull enrollment payload:\n");
     console.log(JSON.stringify(enrollment.payload, null, 2));
+
+    const queueId = enrollment.enrollmentFormQueueId
+      ? String(enrollment.enrollmentFormQueueId)
+      : "";
+    console.log("\n--- enrollment_form_queue sync ---\n");
+    console.log("enrollmentFormQueueId:", queueId || "(missing)");
+
+    if (!queueId) {
+      console.error("FAIL: enrollmentFormQueueId not set on submission.");
+    } else {
+      const queueDoc = await EnrollmentFormQueue.findById(queueId).lean();
+      if (!queueDoc) {
+        console.error("FAIL: queue document not found for id", queueId);
+      } else {
+        const qAddr = queueDoc.primary_parent?.address || {};
+        const qHw = queueDoc.health_and_wellness || {};
+        console.log("Queue checks:");
+        console.log({
+          queueStatus: { got: queueDoc.status, ok: !!queueDoc.status },
+          queueAddressStreet: {
+            expected: "n002",
+            got: qAddr.street,
+            ok: qAddr.street === "n002",
+          },
+          queuePreferredLanguage: {
+            expected: "Mandarin",
+            got: queueDoc.form_metadata?.preferred_language,
+            ok: queueDoc.form_metadata?.preferred_language === "Mandarin",
+          },
+          queueChildGender: {
+            expected: "Male",
+            got: queueDoc.child?.gender,
+            ok: queueDoc.child?.gender === "Male",
+          },
+          queueDaysRequired: {
+            expected: 2,
+            got: queueDoc.enrollment?.days_required?.length ?? 0,
+            ok: (queueDoc.enrollment?.days_required?.length ?? 0) === 2,
+          },
+          queuePhotoConsent: {
+            expected: true,
+            got: qHw.photo_consent,
+            ok: qHw.photo_consent === true,
+          },
+        });
+        console.log("\nFull queue document (root fields):\n");
+        console.log(JSON.stringify(queueDoc, null, 2));
+      }
+    }
   }
 
   const walletAfter = await AutoApplyCredit.findOne({ userId }).lean();
