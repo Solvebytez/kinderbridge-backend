@@ -20,7 +20,7 @@ const {
 const {
   syncEnrollmentToFormQueue,
   queueDocumentToPayload,
-  automationStatusFromQueueStatus,
+  displayFieldsFromQueueStatus,
   loadQueueById,
   loadQueuesByIds,
 } = require("../utils/enrollmentFormQueueSync");
@@ -41,21 +41,26 @@ function toPublicEnrollment(doc, queueLean = null) {
   const o = typeof doc.toObject === "function" ? doc.toObject() : doc;
   let payload = o.payload;
   let automationStatus = o.automationStatus;
+  let completionStatus = o.completionStatus;
   let formQueue = null;
+  let queueStatus = null;
 
   if (queueLean) {
     formQueue = {
       ...queueLean,
       _id: queueLean._id?.toString?.() || queueLean._id,
     };
+    queueStatus =
+      queueLean.status != null && String(queueLean.status).trim()
+        ? String(queueLean.status).trim()
+        : "draft";
     const fromQueue = queueDocumentToPayload(queueLean);
     if (fromQueue) {
       payload = fromQueue;
     }
-    const mappedAutomation = automationStatusFromQueueStatus(queueLean.status);
-    if (mappedAutomation) {
-      automationStatus = mappedAutomation;
-    }
+    const display = displayFieldsFromQueueStatus(queueStatus);
+    automationStatus = display.automationStatus;
+    completionStatus = display.completionStatus;
   }
 
   return {
@@ -67,7 +72,8 @@ function toPublicEnrollment(doc, queueLean = null) {
     enrollmentFormQueueId: o.enrollmentFormQueueId || null,
     payload,
     formQueue,
-    completionStatus: o.completionStatus,
+    queueStatus,
+    completionStatus,
     automationStatus,
     n8n: o.n8n || {},
     createdAt: o.createdAt,

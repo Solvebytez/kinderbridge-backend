@@ -116,13 +116,29 @@ function queueDocumentToPayload(queueDoc) {
   return out;
 }
 
-/** Dashboard / badges: prefer queue.status when n8n updated the queue row. */
+/**
+ * Parent dashboard registration status: always derived from queue.status when linked.
+ */
+function displayFieldsFromQueueStatus(queueStatus) {
+  const s = String(queueStatus || "draft").trim().toLowerCase();
+  switch (s) {
+    case "submitted":
+      return { automationStatus: "submitted", completionStatus: "complete" };
+    case "failed":
+      return { automationStatus: "failed", completionStatus: "complete" };
+    case "pending_automation":
+      return { automationStatus: "queued", completionStatus: "complete" };
+    case "running":
+      return { automationStatus: "running", completionStatus: "complete" };
+    case "draft":
+    default:
+      return { automationStatus: "not_ready", completionStatus: "in_progress" };
+  }
+}
+
+/** @deprecated use displayFieldsFromQueueStatus */
 function automationStatusFromQueueStatus(queueStatus) {
-  const s = String(queueStatus || "").trim().toLowerCase();
-  if (s === "submitted") return "submitted";
-  if (s === "failed") return "failed";
-  if (s === "pending_automation") return "queued";
-  return null;
+  return displayFieldsFromQueueStatus(queueStatus).automationStatus;
 }
 
 function childDisplayNameFromPayload(payload) {
@@ -156,6 +172,7 @@ module.exports = {
   payloadToQueueDocument,
   queueDocumentToPayload,
   queueStatusFromSubmission,
+  displayFieldsFromQueueStatus,
   automationStatusFromQueueStatus,
   childDisplayNameFromPayload,
   loadQueueById,
