@@ -35,6 +35,13 @@ function formatDateOnly(dateValue) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function daycareIdString(daycare) {
+  if (!daycare) return "";
+  const raw = daycare._id ?? daycare.id;
+  if (raw == null) return "";
+  return typeof raw === "string" ? raw.trim() : String(raw);
+}
+
 function buildFormMetadata(daycare) {
   const form = daycare?.enrollmentForm || {};
   const formsLink = String(daycare?.formsLink || "").trim();
@@ -47,6 +54,9 @@ function buildFormMetadata(daycare) {
   const formId =
     String(form.formId || "").trim() ||
     (daycare?._id ? `form_${String(daycare._id)}` : "");
+  const region = String(daycare?.region || "").trim();
+  const city = String(daycare?.city || "").trim();
+  const daycareName = String(daycare?.name || "").trim();
 
   return {
     form_id: formId,
@@ -54,6 +64,32 @@ function buildFormMetadata(daycare) {
     form_url: formUrl,
     submission_date: null,
     preferred_language: "",
+    daycare_id: daycareIdString(daycare),
+    daycare_name: daycareName,
+    city,
+    region,
+  };
+}
+
+/** Keep parent-entered metadata; always refresh daycare location fields from master. */
+function mergeFormMetadataFromDaycare(daycare, existing = {}) {
+  const base = buildFormMetadata(daycare);
+  const prev =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? existing
+      : {};
+
+  return {
+    ...prev,
+    ...base,
+    submission_date:
+      prev.submission_date != null && String(prev.submission_date).trim()
+        ? prev.submission_date
+        : base.submission_date,
+    preferred_language:
+      prev.preferred_language != null && String(prev.preferred_language).trim()
+        ? String(prev.preferred_language).trim()
+        : base.preferred_language,
   };
 }
 
@@ -268,6 +304,7 @@ module.exports = {
   SCHEMA_VERSION,
   splitFullName,
   buildFormMetadata,
+  mergeFormMetadataFromDaycare,
   createEmptyPayload,
   prefillPayloadFromApplication,
   deepMerge,

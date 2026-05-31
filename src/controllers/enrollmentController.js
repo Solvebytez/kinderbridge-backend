@@ -16,6 +16,7 @@ const {
   normalizeLookupText,
   normalizeRegion,
   looksLikeProvinceCode,
+  mergeFormMetadataFromDaycare,
 } = require("../utils/enrollmentPayload");
 const {
   syncEnrollmentToFormQueue,
@@ -178,7 +179,13 @@ class EnrollmentController {
     if (existing) return existing;
 
     const daycare = await this.findDaycareById(daycareId);
-    const payload = prefillPayloadFromApplication(application, daycare);
+    let payload = prefillPayloadFromApplication(application, daycare);
+    if (daycare) {
+      payload = {
+        ...payload,
+        form_metadata: mergeFormMetadataFromDaycare(daycare, payload.form_metadata),
+      };
+    }
     const completionStatus = deriveCompletionStatus(payload);
 
     const created = await EnrollmentSubmission.create({
@@ -248,6 +255,13 @@ class EnrollmentController {
     }
 
     doc.payload = deepMerge(doc.payload || {}, partialPayload || {});
+    const daycare = await this.findDaycareById(doc.daycareId);
+    if (daycare) {
+      doc.payload.form_metadata = mergeFormMetadataFromDaycare(
+        daycare,
+        doc.payload.form_metadata
+      );
+    }
     doc.completionStatus = deriveCompletionStatus(doc.payload);
     if (doc.completionStatus !== "complete") {
       doc.automationStatus =

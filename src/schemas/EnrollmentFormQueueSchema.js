@@ -28,6 +28,10 @@ const formMetadataSchema = new mongoose.Schema(
     form_url: nullableString,
     submission_date: nullableString,
     preferred_language: nullableString,
+    daycare_id: nullableString,
+    daycare_name: nullableString,
+    city: nullableString,
+    region: nullableString,
   },
   { _id: false }
 );

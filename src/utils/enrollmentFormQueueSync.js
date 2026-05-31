@@ -1,5 +1,43 @@
 const EnrollmentSubmission = require("../schemas/EnrollmentSubmissionSchema");
 const EnrollmentFormQueue = require("../schemas/EnrollmentFormQueueSchema");
+const { mergeFormMetadataFromDaycare } = require("./enrollmentPayload");
+
+function getDaycareModel() {
+  const mongoose = require("mongoose");
+  try {
+    return mongoose.model("Daycare");
+  } catch {
+    require("../schemas/DaycareSchema");
+    return mongoose.model("Daycare");
+  }
+}
+
+async function findDaycareById(daycareId) {
+  const Daycare = getDaycareModel();
+  const mongoose = require("mongoose");
+  const id = String(daycareId || "").trim();
+  if (!id) return null;
+
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    const byOid = await Daycare.findById(id).lean();
+    if (byOid) return byOid;
+  }
+  return Daycare.findOne({ id }).lean();
+}
+
+async function enrichPayloadWithDaycare(payload, daycareId) {
+  const base =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+  const daycare = await findDaycareById(daycareId);
+  if (!daycare) return base;
+
+  return {
+    ...base,
+    form_metadata: mergeFormMetadataFromDaycare(daycare, base.form_metadata),
+  };
+}
 
 const QUEUE_ROOT_KEYS = [
   "form_metadata",
@@ -70,7 +108,27 @@ async function syncEnrollmentToFormQueue(submission) {
     if (!doc) return null;
   }
 
-  const queueBody = payloadToQueueDocument(doc.payload, doc.automationStatus);
+  const enrichedPayload = await enrichPayloadWithDaycare(
+    doc.payload,
+    doc.daycareId
+  );
+  const prevMeta = JSON.stringify(doc.payload?.form_metadata || {});
+  const nextMeta = JSON.stringify(enrichedPayload.form_metadata || {});
+  if (prevMeta !== nextMeta) {
+    await EnrollmentSubmission.findByIdAndUpdate(submissionId, {
+      $set: { "payload.form_metadata": enrichedPayload.form_metadata },
+    });
+    if (typeof doc.set === "function") {
+      doc.payload = enrichedPayload;
+    } else {
+      doc.payload = enrichedPayload;
+    }
+  }
+
+  const queueBody = payloadToQueueDocument(
+    enrichedPayload,
+    doc.automationStatus
+  );
   let queueId = doc.enrollmentFormQueueId
     ? String(doc.enrollmentFormQueueId).trim()
     : "";

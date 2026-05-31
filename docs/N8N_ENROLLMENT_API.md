@@ -24,7 +24,7 @@ Example:
 }
 ```
 
-Response: `daycareId`, `form_metadata` (`form_id`, `form_url`, `service_name`), plus `name`, `city`, `region` echo.
+Response: `daycareId`, `form_metadata` (`form_id`, `form_url`, `service_name`, `daycare_id`, `daycare_name`, `city`, `region`), plus `name`, `city`, `region` echo.
 
 ## Get payload
 
