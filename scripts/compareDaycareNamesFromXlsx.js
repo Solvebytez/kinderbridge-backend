@@ -38,7 +38,10 @@ function toStringSafe(v) {
 }
 
 function normalizePart(value) {
-  return toStringSafe(value).toLowerCase();
+  return toStringSafe(value)
+    .replace(/[\u00a0\u202f\ufeff]/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 function buildKey(record, fields) {
@@ -155,7 +158,9 @@ async function main() {
   const partialRows = [];
   const exportLines = [
     [
+      "excel_row",
       "status",
+      "db_id",
       "excel_name",
       "excel_city",
       "excel_region",
@@ -181,10 +186,13 @@ async function main() {
 
     if (exactHits.length > 0) {
       exactMatch += 1;
-      const hit = dbToRecord(exactHits[0]);
+      const hitDoc = exactHits[0];
+      const hit = dbToRecord(hitDoc);
       exportLines.push(
         [
+          i + 2,
           "exact_match",
+          String(hitDoc._id || ""),
           record.name,
           record.city,
           record.region,
@@ -204,10 +212,13 @@ async function main() {
     if (nameHits.length > 0) {
       partialMatch += 1;
       partialRows.push({ record, dbMatches: nameHits.map(dbToRecord) });
-      for (const hit of nameHits.map(dbToRecord)) {
+      for (const hitDoc of nameHits) {
+        const hit = dbToRecord(hitDoc);
         exportLines.push(
           [
+            i + 2,
             "partial_match",
+            String(hitDoc._id || ""),
             record.name,
             record.city,
             record.region,
@@ -228,7 +239,9 @@ async function main() {
     unmatchedRows.push(record);
     exportLines.push(
       [
+        i + 2,
         "no_match",
+        "",
         record.name,
         record.city,
         record.region,
@@ -326,8 +339,10 @@ async function main() {
   }
 
   if (exportPath) {
-    fs.writeFileSync(exportPath, exportLines.join("\n"), "utf8");
-    console.log(`💾 Full report saved to: ${exportPath}\n`);
+    const resolvedExport = path.resolve(exportPath);
+    fs.mkdirSync(path.dirname(resolvedExport), { recursive: true });
+    fs.writeFileSync(resolvedExport, exportLines.join("\n"), "utf8");
+    console.log(`💾 Full match table saved to: ${resolvedExport}\n`);
   }
 
   process.exit(0);

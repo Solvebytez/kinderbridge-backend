@@ -219,6 +219,7 @@ class DaycareModel {
         cwelcc,
         subsidy,
         vacancy,
+        autoApplyOnly,
         page = 1,
         limit = 10,
       } = searchParams;
@@ -459,6 +460,16 @@ class DaycareModel {
       // Subsidy filter
       if (subsidy === "true" || subsidy === true) {
         filter.subsidyAvailable = true;
+      }
+
+      // Auto-apply registry filter (intersect with daycares_master)
+      if (autoApplyOnly === "true" || autoApplyOnly === true) {
+        const { resolveAutoApplyDaycareIds } = require("../utils/autoApplyDaycareFilter");
+        const autoApplyIds = await resolveAutoApplyDaycareIds();
+        filter._id =
+          autoApplyIds.length > 0
+            ? { $in: autoApplyIds }
+            : { $in: [] };
       }
 
       // Parse pagination parameters
